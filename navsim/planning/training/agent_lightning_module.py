@@ -1,12 +1,12 @@
 # -*- encoding: utf-8 -*-
 '''
 @File    :   agent_lightning_module.py
-@Time    :   2026/01/03 19:24:22
+@Time    :   2026/01/04 10:46:58
 @Author  :   Nuoqian Xiao
 @Version :   0.0.1
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   DOING: VLM backend RL Lightning Module
+@Status  :   DOING
 @Desc    :   None
 '''
 
@@ -80,9 +80,9 @@ class AgentLightningModule(pl.LightningModule):
         return self.agent.get_optimizers()
 
 
-
 class AgentLightningDiT(pl.LightningModule):
     """Pytorch lightning wrapper for learnable agent."""
+
     def __init__(self, agent: AbstractAgent):
         """
         Initialise the lightning module wrapper.
@@ -150,72 +150,3 @@ class AgentLightningDiT(pl.LightningModule):
     def configure_optimizers(self):
         """Inherited, see superclass."""
         return self.agent.get_optimizers()
-
-
-
-class AgentLightningVLMRL(pl.LightningModule):  # TODO
-    def __init__(self, agent: AbstractAgent):
-        super().__init__()
-        self.agent = agent
-
-    def _step(
-        self,
-        batch: Tuple[Dict[str, Tensor], Dict[str, Tensor], Any],
-        logging_prefix: str,
-    ) -> Tensor:
-
-        features, targets, tokens_list = batch
-
-        # 1. Rollout / sampling (autoregressive tokens)
-        outputs = self.agent.forward(
-            features=features,
-            targets=targets,
-            tokens_list=tokens_list,
-            mode="sample" if logging_prefix == "train" else "eval",
-        )
-
-        # 2. RL loss computation
-        if logging_prefix == "train":
-            rl_out = self.agent.compute_loss(
-                features=features,
-                targets=targets,
-                outputs=outputs,
-            )
-
-            loss = rl_out.loss
-
-            # ---- logging ----
-            self.log(f"{logging_prefix}/loss", loss, sync_dist=True, prog_bar=True)
-            self.log(f"{logging_prefix}/reward", rl_out.reward, sync_dist=True)
-            self.log(f"{logging_prefix}/policy_loss", rl_out.policy_loss, sync_dist=True)
-            self.log(f"{logging_prefix}/kl_loss", rl_out.kl_loss, sync_dist=True)
-            self.log(f"{logging_prefix}/entropy", rl_out.entropy, sync_dist=True)
-
-        else:
-            # validation: no sampling, no RL
-            loss = self.agent.compute_eval_loss(
-                features=features,
-                targets=targets,
-                outputs=outputs,
-            )
-            self.log(f"{logging_prefix}/loss", loss, sync_dist=True)
-
-        return loss
-
-    def training_step(self, batch, batch_idx):
-        return self._step(batch, "train")
-
-    def validation_step(self, batch, batch_idx):
-        return self._step(batch, "val")
-
-    def configure_optimizers(self):
-        return self.agent.get_optimizers()
-
-    def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
-        # same rationale as DiT: do not save frozen VLM backbone
-        checkpoint["state_dict"] = {
-            k: v
-            for k, v in checkpoint["state_dict"].items()
-            if not k.startswith("agent.vlm")
-        }
-        checkpoint['state_dict'] = filtered_sd
