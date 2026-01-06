@@ -6,7 +6,567 @@
 @Version :   0.0.1
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   None
+@Status  :   DOING
 @Desc    :   None
 '''
+import pdb
 
+from typing import Any, List, Dict, Optional, Union
+import os
+import torch
+from torch.optim import Optimizer
+import torch.optim as optim
+from torch.optim.lr_scheduler import LRScheduler
+from omegaconf import DictConfig, OmegaConf
+from transformers.feature_extraction_utils import BatchFeature
+import math
+
+from navsim.agents.abstract_agent import AbstractAgent
+from navsim.common.dataclasses import AgentInput, SensorConfig, Trajectory
+from navsim.planning.training.abstract_feature_target_builder import AbstractFeatureBuilder, AbstractTargetBuilder
+from nuplan.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
+
+from .utils.internvl_preprocess import load_image
+from .utils.lr_scheduler import WarmupCosLR
+from .utils.utils import format_number, build_from_configs
+# from .recogdrive_features import ReCogDriveFeatureBuilder ,TrajectoryTargetBuilder
+from .recogdrive_backbone import RecogDriveBackbone
+# from .recogdrive_diffusion_planner import (
+#     ReCogDriveDiffusionPlanner,
+#     ReCogDriveDiffusionPlannerConfig,
+# )
+
+
+class NegDriveAgent(AbstractAgent):
+
+    def __init__(
+        self,
+        *,
+        trajectory_sampling: TrajectorySampling,    # TODO
+
+        # ========== VLM (POLICY) ==========
+        vlm_path: str,
+        vlm_type: str = "internvl",
+        vlm_size: str = "large",
+        train_vlm: bool = True,                 
+        cache_hidden_state: bool = False,       # TODO must be False for RL
+        cache_mode: bool = False,
+
+        # ========== DIFFUSION (DECODER) ==========
+        dit_type: str = "small",
+        sampling_method: str = "ddim",
+        freeze_diffusion: bool = True,           
+        diff_checkpoint_path: Optional[str] = None,
+
+        # ========== RL / GRPO ==========
+        use_grpo: bool = True,
+        reference_policy_checkpoint: Optional[str] = None,  # TODO 原本给 diffu 的，可能不需要
+        metric_cache_path: Optional[str] = None,    # TODO 原本给 diffu 的，可能不需要
+        reward_scale: float = 1.0,
+        entropy_coef: float = 0.01,
+        kl_coef: float = 0.0,
+
+        # ========== OPTIM ==========
+        lr: float = 1e-5,
+
+        # ========== RUNTIME ==========
+        device: Optional[str] = None,
+    ):
+        super().__init__()
+
+        # -----------------------
+        # core attributes
+        # -----------------------
+        self._trajectory_sampling = trajectory_sampling     # TODO
+        self.device = device or f"cuda:{int(os.getenv('LOCAL_RANK', 0))}"
+
+        self.cache_mode = cache_mode
+        self.cache_hidden_state = cache_hidden_state
+
+        # -----------------------
+        # VLM (policy network)
+        # -----------------------
+        self.vlm_path = vlm_path
+        self.vlm_type = vlm_type    # TODO
+        self.vlm_size = vlm_size    # TODO
+        self.train_vlm = train_vlm
+        self.grpo = use_grpo    # TODO
+
+        self.vlm = NegDriveVLM(     # TODO ori: ReCogDriveBackbone
+            model_type=self.vlm_type,
+            checkpoint_path=self.vlm_path,
+            device=self.device,
+        )
+        for p in self.vlm.parameters():
+            p.requires_grad = train_vlm
+
+        if self.cache_hidden_state or self.cache_mode:  # TODO 这个 mode 干嘛的
+            raise ValueError(
+                "cache_hidden_state=True or cache_mode=True is incompatible with VLM RL training "
+            )
+        
+        # -----------------------
+        # Diffusion planner (frozen)
+        # -----------------------
+        self.freeze_diffusion = freeze_diffusion
+        
+        self.dit_type = dit_type
+
+        self.metric_cache_path = metric_cache_path
+        self.reference_policy_checkpoint = reference_policy_checkpoint
+
+        if self.freeze_diffusion:
+            input_dim = 1536 if vlm_size == "large" else 384
+            cfg = make_diffusion_planner_config(   
+                    self.dit_type, 
+                    action_dim=3, 
+                    action_horizon=8, 
+                    grpo=False, 
+                    input_embedding_dim=input_dim,
+                    sampling_method=sampling_method
+                    )
+            self.action_head = NegDriveDiffusionPlanner(cfg).to(self.device)    #TODO head 
+            for p in self.action_head.parameters():
+                p.requires_grad = False
+            
+        else:
+            raise NotImplementedError
+
+        # optional planner checkpoint
+        self.checkpoint_path = diff_checkpoint_path  # TODO
+        # if checkpoint_path: 
+        #     self._load_planner_checkpoint(checkpoint_path)  # TODO
+
+
+        # -----------------------
+        # GRPO / RL parameters
+        # -----------------------
+        self.reward_scale = reward_scale
+        self.entropy_coef = entropy_coef
+        self.kl_coef = kl_coef
+
+        self.reference_policy_checkpoint = reference_policy_checkpoint
+        self.metric_cache_path = metric_cache_path  # TODO
+
+        # -----------------------
+        # optimizer
+        # -----------------------
+        self._lr = lr
+
+        # -----------------------
+        # others TOOD
+        # -----------------------
+        self.num_inference_samples = 1
+        self.inference_selection_mode = "median"
+
+
+    def name(self) -> str:
+        return self.__class__.__name__
+
+
+    def initialize(self) -> None:   # TODO 根据使用的位置，再看要不要改
+
+        if self.checkpoint_path:
+            ckpt = torch.load(self.checkpoint_path, map_location="cpu")["state_dict"]
+            model_dict = self.state_dict()
+            filtered_ckpt = {}
+            for k, v in ckpt.items():
+                k2 = k[len("agent."):] if k.startswith("agent.") else k
+                if k2 in model_dict and v.shape == model_dict[k2].shape:
+                    filtered_ckpt[k2] = v
+            self.load_state_dict(filtered_ckpt, strict=False)
+
+    # def initialize(self) -> None: 
+    #     """
+    #     Initialize agent components from checkpoints.
+
+    #     Semantics:
+    #     - VLM checkpoint → trainable policy
+    #     - Diffusion checkpoint → frozen decoder
+    #     - GRPO reference policy → loaded separately
+    #     """
+
+    #     # -------------------------
+    #     # 1. Load VLM (policy)
+    #     # -------------------------
+    #     if self.vlm_path is not None:
+    #         vlm_ckpt = torch.load(self.vlm_path, map_location="cpu")
+
+    #         if "state_dict" in vlm_ckpt:
+    #             vlm_ckpt = vlm_ckpt["state_dict"]
+
+    #         missing, unexpected = self.backbone.load_state_dict(
+    #             vlm_ckpt, strict=False
+    #         )
+
+    #         if len(unexpected) > 0:
+    #             print(f"[VLM] Unexpected keys: {unexpected}")
+    #         if len(missing) > 0:
+    #             print(f"[VLM] Missing keys: {missing}")
+
+    #     # -------------------------
+    #     # 2. Load diffusion planner (frozen)
+    #     # -------------------------
+    #     if self.checkpoint_path is not None:
+    #         planner_ckpt = torch.load(self.checkpoint_path, map_location="cpu")
+
+    #         if "state_dict" in planner_ckpt:
+    #             planner_ckpt = planner_ckpt["state_dict"]
+
+    #         planner_sd = {
+    #             k.replace("agent.action_head.", ""): v
+    #             for k, v in planner_ckpt.items()
+    #             if k.startswith("agent.action_head.")
+    #         }
+
+    #         self.action_head.load_state_dict(planner_sd, strict=True)
+
+    #         # enforce freezing (important!)
+    #         for p in self.action_head.parameters():
+    #             p.requires_grad = False
+
+    #     # -------------------------
+    #     # 3. Load GRPO reference policy (optional)
+    #     # -------------------------
+    #     if self.use_grpo and self.reference_policy_checkpoint:
+    #         self._load_reference_policy(self.reference_policy_checkpoint)
+
+
+    def get_sensor_config(self) -> SensorConfig:
+        return SensorConfig.build_all_sensors(include=[0, 1, 2, 3])
+
+    def get_target_builders(self) -> List[AbstractTargetBuilder]:
+        return [TrajectoryTargetBuilder(trajectory_sampling=self._trajectory_sampling)]
+
+
+    def get_feature_builders(self) -> List[AbstractFeatureBuilder]:
+        return [ReCogDriveFeatureBuilder(   # TODO new feature builder ?
+            cache_hidden_state=self.cache_hidden_state,
+            model_type=self.vlm_type,
+            checkpoint_path=self.vlm_path,
+            device=self.device,
+            cache_mode=self.cache_mode,
+        )]
+
+
+    def forward(self, 
+                features: Dict[str, torch.Tensor],
+                targets = None, 
+                tokens_list = None
+                ) -> Dict[str, torch.Tensor]:
+        for key, tensor in features.items():
+            if isinstance(tensor, torch.Tensor):
+                features[key] = tensor.cuda()
+
+        # -------------------------------------------------
+        # Build VLM inputs (images + prompts)
+        # -------------------------------------------------
+        history_trajectory = features["history_trajectory"].cuda()  # TODO why .CUDA
+        high_command_one_hot = features["high_command_one_hot"].cuda()
+
+        if history_trajectory.ndim == 2:
+            history_trajectory = history_trajectory.unsqueeze(0)
+        if high_command_one_hot.ndim == 1:
+            high_command_one_hot = high_command_one_hot.unsqueeze(0)
+
+        if self.cache_hidden_state:     
+            raise NotImplementedError
+            # last_hidden_state = features["last_hidden_state"].cuda() 
+        else:
+            if self.vlm is None:
+                raise RuntimeError("Agent is in 'no-cache' mode, but VLM backbone is not initialized.")
+            
+            image_path_tensor = features["image_path_tensor"]
+            if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
+            image_paths = self._decode_paths_from_tensor(image_path_tensor)
+
+            pixel_values_list = [load_image(path) for path in image_paths]  # TODO load image
+            num_patches_list = [p.shape[0] for p in pixel_values_list]
+            pixel_values_cat = torch.cat(pixel_values_list, dim=0).cuda()
+
+            navigation_commands = ['turn left', 'go straight', 'turn right']
+            command_indices = torch.argmax(high_command_one_hot, dim=-1)
+            command_str_list = [navigation_commands[idx.item()] for idx in command_indices]
+
+            questions = []
+            batch_size = high_command_one_hot.shape[0]
+            for i in range(batch_size):
+                history_trajectory_sample = history_trajectory[i]
+                command_str_sample = command_str_list[i]
+
+                history_str = ' '.join([
+                    f'   - t-{3-j}: ({format_number(history_trajectory_sample[j, 0].item())}, '
+                    f'{format_number(history_trajectory_sample[j, 1].item())}, '
+                    f'{format_number(history_trajectory_sample[j, 2].item())})'
+                    for j in range(history_trajectory_sample.shape[0])
+                ])
+
+                prompt = (
+                    "<image>\nAs an autonomous driving system, predict the vehicle's trajectory based on:\n"
+                    "1. Visual perception from front camera view\n"
+                    f"2. Historical motion context (last 4 timesteps):{history_str}\n"
+                    f"3. Active navigation command: [{command_str_sample.upper()}]"
+                )     # TODO prompt 是否修改
+                output_requirements = (
+                    "\nOutput requirements:\n- Predict 8 future trajectory points\n"
+                    "- Each point format: (x:float, y:float, heading:float)\n"
+                    "- Use [PT, ...] to encapsulate the trajectory\n"
+                    "- Maintain numerical precision to 2 decimal places"
+                )   # TODO output requirements 是否修改
+
+                questions.append(f"{prompt}{output_requirements}")
+            
+            outputs = self.vlm(
+                pixel_values_cat, 
+                questions, 
+                num_patches_list=num_patches_list,
+                # output_log_probs=True, # TODO for RL 
+                )  # TODO check outputs 样子
+
+            print(outputs)
+            pdb.set_trace()
+
+            last_hidden_state = outputs.hidden_states[-1]   # TODO 提取 log_probs 和 entropy 这部分
+            log_probs = outputs.log_probs          # (B, T)
+            entropy = outputs.entropy              # (B,)
+
+        status_feature = features["status_feature"].cuda()
+        if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
+        if last_hidden_state.ndim == 2: last_hidden_state = last_hidden_state.unsqueeze(0)
+
+        history_trajectory_reshaped = history_trajectory.view(history_trajectory.size(0), -1)
+        input_state = torch.cat([status_feature, history_trajectory_reshaped], dim=1)
+
+        # -------------------------------------------------
+        # Build diffusion inputs (NO GRAD)
+        # -------------------------------------------------
+        diff_dtype = next(self.action_head.parameters()).dtype
+        action_inputs = BatchFeature({
+            "state": input_state.to(diff_dtype),
+            "his_traj": history_trajectory_reshaped.to(diff_dtype),
+            "status_feature": status_feature.to(diff_dtype)
+        }
+        )
+        with torch.no_grad():
+            actions = self.action_head.get_action(
+                last_hidden_state.to(diff_dtype), 
+                action_inputs
+            )        
+    #     if self.training and not self.grpo:   # TODO 有必要再弄可配置的
+    #         action_inputs = BatchFeature(data={"state": input_state.to(model_dtype), "his_traj": history_trajectory_reshaped.to(model_dtype), "status_feature": status_feature.to(model_dtype), "action": targets["trajectory"].to(model_dtype)})
+    #         return self.action_head(last_hidden_state, action_inputs)
+    #     elif self.training and self.grpo:
+    #         action_inputs = BatchFeature(data={"state": input_state.to(model_dtype), "his_traj": history_trajectory_reshaped.to(model_dtype), "status_feature": status_feature.to(model_dtype), "action": targets["trajectory"].to(model_dtype)})
+    #         return self.action_head.forward_grpo(last_hidden_state, action_inputs, tokens_list)
+    #     else: 
+    #         action_inputs = BatchFeature({"state": input_state.to(model_dtype), "his_traj": history_trajectory_reshaped.to(model_dtype), "status_feature": status_feature.to(model_dtype)})
+    #         return self.action_head.get_action(last_hidden_state.to(model_dtype), action_inputs)
+
+        # -------------------------------------------------
+        # TRAINING: GRPO loss on VLM
+        # -------------------------------------------------  
+        if self.training and self.grpo:     # TODO self.training flag 在哪里 tag 
+            rewards = self._compute_vlm_rlvr_reward(    # TODO compute rlvr reward, 结合 ne reinforce 
+                traj_outputs = actions,
+                targets = targets,
+            )
+
+            # TODO 拿出去 positive 的
+
+            grpo_loss = self._compute_vlm_grpo_loss(    # TODO compute GRPO 
+                log_probs = log_probs,
+                rewards = rewards,
+                entropy = entropy,
+                tokens = tokens_list
+            )
+
+            return {    # TODO return 的一致性
+            "loss": grpo_loss,
+            "reward": rewards.mean(),
+            "policy_loss": grpo_loss,
+            "entropy": entropy.mean(),
+            "pred_traj": actions["pred_traj"],
+            }
+
+        elif self.training and not self.grpo:
+            raise NotImplementedError
+
+        # -------------------------------------------------
+        # Eval
+        # -------------------------------------------------         
+        return actions  # TODO 检查跟原输出的一致性
+
+
+    @staticmethod
+    def _decode_paths_from_tensor(path_tensor: torch.Tensor) -> List[str]:
+        """
+        Decodes a batch of path tensors back into a list of file path strings.
+        
+        Args:
+            path_tensor (torch.Tensor): A 2D tensor of shape 
+                (batch_size, max_path_length) from the collate_fn.
+        
+        Returns:
+            List[str]: A list of decoded file path strings.
+        """
+        decoded_paths = []
+        for single_path_tensor in path_tensor:
+            chars = []
+            for code in single_path_tensor:
+                code_item = code.item()
+                if code_item == 0: 
+                    break
+                chars.append(chr(code_item))
+            decoded_paths.append("".join(chars))
+        return decoded_paths
+
+
+    def compute_trajectory(self, 
+                           agent_input: AgentInput  # TODO AgentInput
+                           ) -> Trajectory:
+        self.eval()
+
+        features: Dict[str, torch.Tensor] = {}
+        # build features
+        for builder in self.get_feature_builders():    # TODO get_feature_builders()
+            features.update(builder.compute_features(agent_input))
+        # add batch dimension
+        features = {k: v.unsqueeze(0) for k, v in features.items()}
+
+        with torch.no_grad():
+            predictions = self.forward(features)
+            poses = predictions["pred_traj"].float().cpu().squeeze(0)
+
+        return Trajectory(poses)    # TODO Trajectory
+
+
+    def compute_trajectory_vis(self, agent_input: AgentInput) -> Trajectory:
+        self.eval()
+
+        features: Dict[str, torch.Tensor] = {}
+        # build features
+        for builder in self.get_feature_builders():
+            features.update(builder.compute_features(agent_input))
+
+        # add batch dimension
+        features = {k: v.unsqueeze(0) for k, v in features.items()}
+
+        with torch.no_grad():
+            predictions = self.forward(features)
+            poses = predictions["pred_traj"].float().cpu().squeeze(0)
+        return Trajectory(poses)
+
+
+    def compute_loss(self, 
+                     features: Dict[str, torch.Tensor], 
+                     targets: Dict[str, torch.Tensor], 
+                     predictions: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """
+        For pl;  
+        
+        TODO check 
+        """
+        if self.training and self.grpo:
+            return predictions
+        elif self.training:
+            return predictions.loss 
+        else:
+            return torch.nn.functional.l1_loss(
+                predictions["pred_traj"],
+                targets["trajectory"]
+            )
+
+
+    def get_optimizers(self) -> Union[Optimizer, Dict[str, LRScheduler]]:
+        """for pl
+        TODO check 
+        """
+        optimizer_cfg = DictConfig(dict(type="AdamW", 
+                                        lr=self._lr, 
+                                        weight_decay=1e-4, 
+                                        betas=(0.9, 0.95))
+                                        )
+        optimizer = build_from_configs(optim, 
+                                       optimizer_cfg, 
+                                       params=self.vlm.parameters())    
+        # TODO this is for full VLM tuning,
+        # for LoRA , adapter ?  
+        
+        if self.grpo:
+            scheduler = WarmupCosLR(optimizer=optimizer,    # TODO 这个是啥东西
+                                    lr=self._lr, 
+                                    min_lr=0.0, 
+                                    epochs=10, 
+                                    warmup_epochs=0
+                                    )
+        else:
+            raise NotImplementedError
+            # scheduler = WarmupCosLR(optimizer=optimizer,    # TODO 另外的
+            #                         lr=self._lr, 
+            #                         min_lr=1e-6, 
+            #                         epochs=200, 
+            #                         warmup_epochs=3)
+            
+        return {'optimizer': optimizer, 'lr_scheduler': scheduler}
+
+
+
+def make_diffusion_planner_config(
+    size: str,
+    *,
+    action_dim: int,
+    action_horizon: int,
+    input_embedding_dim: int,
+    sampling_method: str = 'ddim',
+    num_inference_steps: int = 5,
+    grpo: bool = False,
+    model_dtype: str = "float16",
+) -> ReCogDriveDiffusionPlannerConfig:
+    """
+    A factory function to create a ReCogDriveDiffusionPlannerConfig (our diffusion planner head) object.
+
+    This function simplifies configuration by using a size preset ("small",
+    "large", "large_new") to define the core DiT architecture, while allowing
+    other important planner settings to be specified.
+
+    Args:
+        size (str): The size preset for the DiT backbone.
+        action_dim (int): The dimension of the action space.
+        action_horizon (int): The number of future action steps to predict.
+        input_embedding_dim (int): Dimension of the input embeddings to the DiT.
+        sampling_method (str): The core training and sampling methodology.
+        num_inference_steps (int): Number of steps for inference sampling.
+        grpo (bool): If True, enables GRPO-specific logic.
+        model_dtype (str): The data type for model computations.
+
+    Returns:
+        ReCogDriveDiffusionPlannerConfig: An instantiated and configured planner config object.
+    """
+    size = size.lower()
+    if size == "small":
+        diffusion_model_cfg = {"num_heads": 8, "head_dim": 48, "num_layers": 16,"output_dim":512}
+    elif size == "large":
+        diffusion_model_cfg = {"num_heads": 32, "head_dim": 48, "num_layers": 16,"output_dim":1536}
+    else:
+        raise ValueError(f"Unknown model size: {size!r}")
+
+    common_params: Dict[str, any] = {
+        "dropout": 0.0,
+        "attention_bias": True,
+        "norm_eps": 1e-5,
+        "interleave_attention": True,
+    }
+    diffusion_model_cfg.update(common_params)
+
+    config = ReCogDriveDiffusionPlannerConfig(     # TODO
+        diffusion_model_cfg=diffusion_model_cfg,
+        action_dim=action_dim,
+        action_horizon=action_horizon,
+        input_embedding_dim=input_embedding_dim,
+        sampling_method=sampling_method,
+        num_inference_steps=num_inference_steps,
+        grpo=grpo,
+        model_dtype=model_dtype,
+    )
+    
+    return config
