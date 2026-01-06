@@ -29,7 +29,7 @@ torchrun \
     $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_negdrive.py \  
     agent=negdrive_agent \
     agent.lr=1e-4 \
-    agent.vlm_path='/path/to/pretrain_model' \  # TODO
+    agent.vlm_path='/path/to/pretrain_model' \
     agent.cam_type='single' \
     agent.grpo=True \
     agent.cache_hidden_state=True \
@@ -46,5 +46,5 @@ torchrun \
     train_test_split=$TRAIN_TEST_SPLIT \
     cache_path="/path/to/recogdrive_agent_cache_dir_train" \
     use_cache_without_dataset=True \
-    force_cache_computation=False > train_recogdrive_rl_2b.txt 2>&1
+    force_cache_computation=False > train_negdriv_test01.txt 2>&1
   # 2>&1 | tee -a "training_log.txt" &
