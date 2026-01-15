@@ -1,9 +1,7 @@
 
-export NAVSIM_EXP_ROOT="/root/autodl-tmp/exps/nv"     # TODO 似乎是 exp 记录
+export NAVSIM_EXP_ROOT="/root/autodl-tmp/exps/nv"     # exp log 存放
 TRAIN_TEST_SPLIT=navtrain   # data
 EXP_NAME=tmp_test
-
-
 
 
 export MASTER_PORT=63669
@@ -48,4 +46,30 @@ torchrun \
     --nproc_per_node=1 \
     navsim/planning/script/run_training_negdrive.py \
     train_test_split=$TRAIN_TEST_SPLIT \
-    experiment_name=$EXP_NAME 
+    experiment_name=$EXP_NAME \
+    agent=recogdrive_agent 
+
+
+# -----------------
+# agent config
+# -----------------
+    # agent=negdrive_agent   navsim/planning/script/config/common/agent/[negdrive_agent].yaml
+    # agent.lr=1e-4 \
+    # agent.vlm_path='/path/to/pretrain_model' \
+    # agent.cam_type='single' \
+    # agent.grpo=True \
+    # agent.cache_hidden_state=True \
+    # agent.vlm_type="internvl" \
+    # agent.checkpoint_path="'$CHECKPOINT'" \
+    # agent.dit_type="small" \
+    # agent.vlm_size="small" \
+    # agent.sampling_method="ddim" \
+    # agent.metric_cache_path="/path/to/metric_cache_dir" \
+    # agent.reference_policy_checkpoint="'$CHECKPOINT'" \
+    # trainer.params.max_epochs=10 \
+    # dataloader.params.batch_size=8 \
+    # experiment_name=training_internvl_agent_dit \
+    # train_test_split=$TRAIN_TEST_SPLIT \
+    # cache_path="/path/to/recogdrive_agent_cache_dir_train" \
+    # use_cache_without_dataset=True \
+    # force_cache_computation=False > train_negdriv_test01.txt 2>&1

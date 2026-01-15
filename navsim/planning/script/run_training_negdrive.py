@@ -6,7 +6,7 @@
 @Version :   0.0.1
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   DOING - 01
+@Status  :    单卡测试
 @Desc    :   None
 '''
 import pdb
@@ -174,7 +174,7 @@ def main(cfg: DictConfig) -> None:
     world_size = int(os.getenv('WORLD_SIZE', 1))
     rank = int(os.getenv('RANK', 0))
 
-    pdb.set_trace()
+    # pdb.set_trace() 
 
     dist.init_process_group(
         backend='nccl',
@@ -185,12 +185,16 @@ def main(cfg: DictConfig) -> None:
     pl.seed_everything(cfg.seed, workers=True)
     logger.info(f"Global Seed set to {cfg.seed}")
 
-    pdb.set_trace()
+    # pdb.set_trace()
 
-    logger.info(f"Path where all results are stored: {cfg.output_dir}")
+    logger.info(f"Path where all results are stored: {cfg.output_dir}") # 就在 NAVSIM_EXP_ROOT 下
+
 
     logger.info("Building Agent")
     agent: AbstractAgent = instantiate(cfg.agent)   # TODO write agent module 
+
+    pdb.set_trace()
+
     agent.initialize()
 
     pdb.set_trace()

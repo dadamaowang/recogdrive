@@ -18,7 +18,7 @@ from torch.optim import Optimizer
 import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 from omegaconf import DictConfig, OmegaConf
-from transformers.feature_extraction_utils import BatchFeature
+# from transformers.feature_extraction_utils import BatchFeature
 import math
 
 from navsim.agents.abstract_agent import AbstractAgent
@@ -26,11 +26,11 @@ from navsim.common.dataclasses import AgentInput, SensorConfig, Trajectory
 from navsim.planning.training.abstract_feature_target_builder import AbstractFeatureBuilder, AbstractTargetBuilder
 from nuplan.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
 
-from .utils.internvl_preprocess import load_image
-from .utils.lr_scheduler import WarmupCosLR
-from .utils.utils import format_number, build_from_configs
+# from .utils.internvl_preprocess import load_image
+# from .utils.lr_scheduler import WarmupCosLR
+# from .utils.utils import format_number, build_from_configs
 # from .recogdrive_features import ReCogDriveFeatureBuilder ,TrajectoryTargetBuilder
-from .recogdrive_backbone import RecogDriveBackbone
+# from .recogdrive_backbone import RecogDriveBackbone
 # from .recogdrive_diffusion_planner import (
 #     ReCogDriveDiffusionPlanner,
 #     ReCogDriveDiffusionPlannerConfig,
@@ -73,6 +73,10 @@ class NegDriveAgent(AbstractAgent):
         device: Optional[str] = None,
     ):
         super().__init__()
+
+
+        print('init NegDrive Agent')
+        pdb.set_trace()
 
         # -----------------------
         # core attributes
