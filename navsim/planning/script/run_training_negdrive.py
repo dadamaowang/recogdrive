@@ -25,7 +25,7 @@ from navsim.agents.abstract_agent import AbstractAgent
 from navsim.common.dataclasses import SceneFilter
 from navsim.common.dataloader import SceneLoader
 from navsim.planning.training.dataset import CacheOnlyDataset, Dataset
-from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL
+# from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL
 import torch
 import torch.nn.utils.rnn as rnn_utils
 from typing import List, Dict
