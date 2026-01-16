@@ -23,6 +23,7 @@ export PORT=${PORT}
 echo "GPUS: ${GPUS}"
 export CUDA_LAUNCH_BLOCKING=1
 
+export HYDRA_FULL_ERROR=1
 
 # torchrun \
 #     --standalone \
@@ -47,7 +48,7 @@ torchrun \
     navsim/planning/script/run_training_negdrive.py \
     train_test_split=$TRAIN_TEST_SPLIT \
     experiment_name=$EXP_NAME \
-    agent=recogdrive_agent 
+    agent=negdrive_agent 
 
 
 # -----------------

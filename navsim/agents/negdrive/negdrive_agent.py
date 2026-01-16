@@ -24,7 +24,7 @@ import math
 from navsim.agents.abstract_agent import AbstractAgent
 from navsim.common.dataclasses import AgentInput, SensorConfig, Trajectory
 from navsim.planning.training.abstract_feature_target_builder import AbstractFeatureBuilder, AbstractTargetBuilder
-from nuplan.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
+# from nuplan.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
 
 # from .utils.internvl_preprocess import load_image
 # from .utils.lr_scheduler import WarmupCosLR
@@ -515,62 +515,62 @@ class NegDriveAgent(AbstractAgent):
 
 
 
-def make_diffusion_planner_config(
-    size: str,
-    *,
-    action_dim: int,
-    action_horizon: int,
-    input_embedding_dim: int,
-    sampling_method: str = 'ddim',
-    num_inference_steps: int = 5,
-    grpo: bool = False,
-    model_dtype: str = "float16",
-) -> ReCogDriveDiffusionPlannerConfig:
-    """
-    A factory function to create a ReCogDriveDiffusionPlannerConfig (our diffusion planner head) object.
+# def make_diffusion_planner_config(
+#     size: str,
+#     *,
+#     action_dim: int,
+#     action_horizon: int,
+#     input_embedding_dim: int,
+#     sampling_method: str = 'ddim',
+#     num_inference_steps: int = 5,
+#     grpo: bool = False,
+#     model_dtype: str = "float16",
+# ) -> ReCogDriveDiffusionPlannerConfig:
+#     """
+#     A factory function to create a ReCogDriveDiffusionPlannerConfig (our diffusion planner head) object.
 
-    This function simplifies configuration by using a size preset ("small",
-    "large", "large_new") to define the core DiT architecture, while allowing
-    other important planner settings to be specified.
+#     This function simplifies configuration by using a size preset ("small",
+#     "large", "large_new") to define the core DiT architecture, while allowing
+#     other important planner settings to be specified.
 
-    Args:
-        size (str): The size preset for the DiT backbone.
-        action_dim (int): The dimension of the action space.
-        action_horizon (int): The number of future action steps to predict.
-        input_embedding_dim (int): Dimension of the input embeddings to the DiT.
-        sampling_method (str): The core training and sampling methodology.
-        num_inference_steps (int): Number of steps for inference sampling.
-        grpo (bool): If True, enables GRPO-specific logic.
-        model_dtype (str): The data type for model computations.
+#     Args:
+#         size (str): The size preset for the DiT backbone.
+#         action_dim (int): The dimension of the action space.
+#         action_horizon (int): The number of future action steps to predict.
+#         input_embedding_dim (int): Dimension of the input embeddings to the DiT.
+#         sampling_method (str): The core training and sampling methodology.
+#         num_inference_steps (int): Number of steps for inference sampling.
+#         grpo (bool): If True, enables GRPO-specific logic.
+#         model_dtype (str): The data type for model computations.
 
-    Returns:
-        ReCogDriveDiffusionPlannerConfig: An instantiated and configured planner config object.
-    """
-    size = size.lower()
-    if size == "small":
-        diffusion_model_cfg = {"num_heads": 8, "head_dim": 48, "num_layers": 16,"output_dim":512}
-    elif size == "large":
-        diffusion_model_cfg = {"num_heads": 32, "head_dim": 48, "num_layers": 16,"output_dim":1536}
-    else:
-        raise ValueError(f"Unknown model size: {size!r}")
+#     Returns:
+#         ReCogDriveDiffusionPlannerConfig: An instantiated and configured planner config object.
+#     """
+#     size = size.lower()
+#     if size == "small":
+#         diffusion_model_cfg = {"num_heads": 8, "head_dim": 48, "num_layers": 16,"output_dim":512}
+#     elif size == "large":
+#         diffusion_model_cfg = {"num_heads": 32, "head_dim": 48, "num_layers": 16,"output_dim":1536}
+#     else:
+#         raise ValueError(f"Unknown model size: {size!r}")
 
-    common_params: Dict[str, any] = {
-        "dropout": 0.0,
-        "attention_bias": True,
-        "norm_eps": 1e-5,
-        "interleave_attention": True,
-    }
-    diffusion_model_cfg.update(common_params)
+#     common_params: Dict[str, any] = {
+#         "dropout": 0.0,
+#         "attention_bias": True,
+#         "norm_eps": 1e-5,
+#         "interleave_attention": True,
+#     }
+#     diffusion_model_cfg.update(common_params)
 
-    config = ReCogDriveDiffusionPlannerConfig(     # TODO
-        diffusion_model_cfg=diffusion_model_cfg,
-        action_dim=action_dim,
-        action_horizon=action_horizon,
-        input_embedding_dim=input_embedding_dim,
-        sampling_method=sampling_method,
-        num_inference_steps=num_inference_steps,
-        grpo=grpo,
-        model_dtype=model_dtype,
-    )
+#     config = ReCogDriveDiffusionPlannerConfig(     # TODO
+#         diffusion_model_cfg=diffusion_model_cfg,
+#         action_dim=action_dim,
+#         action_horizon=action_horizon,
+#         input_embedding_dim=input_embedding_dim,
+#         sampling_method=sampling_method,
+#         num_inference_steps=num_inference_steps,
+#         grpo=grpo,
+#         model_dtype=model_dtype,
+#     )
     
-    return config
+#     return config
