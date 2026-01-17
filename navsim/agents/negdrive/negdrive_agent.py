@@ -24,7 +24,7 @@ import math
 from navsim.agents.abstract_agent import AbstractAgent
 from navsim.common.dataclasses import AgentInput, SensorConfig, Trajectory
 from navsim.planning.training.abstract_feature_target_builder import AbstractFeatureBuilder, AbstractTargetBuilder
-# from nuplan.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
+from nuplan.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
 
 # from .utils.internvl_preprocess import load_image
 # from .utils.lr_scheduler import WarmupCosLR
@@ -75,7 +75,7 @@ class NegDriveAgent(AbstractAgent):
         super().__init__()
 
 
-        print('init NegDrive Agent')
+        print('into NegDrive Agent __init__ function ')
         pdb.set_trace()
 
         # -----------------------

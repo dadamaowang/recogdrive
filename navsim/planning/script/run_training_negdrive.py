@@ -190,6 +190,11 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"Path where all results are stored: {cfg.output_dir}") # 就在 NAVSIM_EXP_ROOT 下
 
 
+    # from navsim.agents.negdrive.negdrive_agent import NegDriveAgent
+    # print('init negdrive agent')
+    # pdb.set_trace()
+
+
     logger.info("Building Agent")
     agent: AbstractAgent = instantiate(cfg.agent)   # TODO write agent module 
 
