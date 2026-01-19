@@ -25,7 +25,7 @@ from navsim.agents.abstract_agent import AbstractAgent
 from navsim.common.dataclasses import SceneFilter
 from navsim.common.dataloader import SceneLoader
 from navsim.planning.training.dataset import CacheOnlyDataset, Dataset
-# from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL
+from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL
 import torch
 import torch.nn.utils.rnn as rnn_utils
 from typing import List, Dict
@@ -106,13 +106,13 @@ def custom_collate_fn(
     return features, targets, tokens_list
 
 
-# def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Dataset]: # TODO
-#     """
-#     Builds training and validation datasets from omega config
-#     :param cfg: omegaconf dictionary
-#     :param agent: interface of agents in NAVSIM
-#     :return: tuple for training and validation dataset
-#     """
+def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Dataset]: # TODO
+    """
+    Builds training and validation datasets from omega config
+    :param cfg: omegaconf dictionary
+    :param agent: interface of agents in NAVSIM
+    :return: tuple for training and validation dataset
+    """
 #     train_scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
 #     if train_scene_filter.log_names is not None:
 #         train_scene_filter.log_names = [
@@ -196,21 +196,18 @@ def main(cfg: DictConfig) -> None:
 
 
     logger.info("Building Agent")
-    agent: AbstractAgent = instantiate(cfg.agent)   # TODO write agent module 
+    agent: AbstractAgent = instantiate(cfg.agent)   # TODO 
 
-    pdb.set_trace()
-
-    agent.initialize()
-
-    pdb.set_trace()
+    # agent.initialize()
+    # pdb.set_trace()
 
     logger.info("Building Lightning Module")    # TODO write Lightning module
     lightning_module = AgentLightningVLMRL(
         agent=agent,
     )
-    pdb.set_trace()
 
-    if cfg.use_cache_without_dataset:   # TODO VLM training 可以 use cache ? 
+
+    if cfg.use_cache_without_dataset:   # If training VLM backbone, suggest(should) not use cache.
         logger.info("Using cached data without building SceneLoader")
         assert (
             not cfg.force_cache_computation
@@ -238,6 +235,9 @@ def main(cfg: DictConfig) -> None:
         pdb.set_trace()
     else:
         logger.info("Building SceneLoader")
+
+        pdb.set_trace()
+
         raise NotImplementedError
         # train_data, val_data = build_datasets(cfg, agent)
 

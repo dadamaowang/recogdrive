@@ -9,6 +9,7 @@
 @Status  :   DOING
 @Desc    :   None
 '''
+
 import pdb
 
 from typing import Any, List, Dict, Optional, Union
@@ -39,7 +40,7 @@ from nuplan.planning.simulation.trajectory.trajectory_sampling import Trajectory
 
 class NegDriveAgent(AbstractAgent):
 
-    def __init__(
+    def __init__(   # TODO: init 的参数根据具体情况设定
         self,
         *,
         trajectory_sampling: TrajectorySampling,    # TODO
@@ -74,101 +75,97 @@ class NegDriveAgent(AbstractAgent):
     ):
         super().__init__()
 
-
-        print('into NegDrive Agent __init__ function ')
-        pdb.set_trace()
-
         # -----------------------
         # core attributes
         # -----------------------
         self._trajectory_sampling = trajectory_sampling     # TODO
         self.device = device or f"cuda:{int(os.getenv('LOCAL_RANK', 0))}"
 
-        self.cache_mode = cache_mode
-        self.cache_hidden_state = cache_hidden_state
+        # self.cache_mode = cache_mode
+        # self.cache_hidden_state = cache_hidden_state
 
-        # -----------------------
-        # VLM (policy network)
-        # -----------------------
-        self.vlm_path = vlm_path
-        self.vlm_type = vlm_type    # TODO
-        self.vlm_size = vlm_size    # TODO
-        self.train_vlm = train_vlm
-        self.grpo = use_grpo    # TODO
+        # # -----------------------
+        # # VLM (policy network)
+        # # -----------------------
+        # self.vlm_path = vlm_path
+        # self.vlm_type = vlm_type    # TODO
+        # self.vlm_size = vlm_size    # TODO
+        # self.train_vlm = train_vlm
+        # self.grpo = use_grpo    # TODO
 
-        self.vlm = NegDriveVLM(     # TODO ori: ReCogDriveBackbone
-            model_type=self.vlm_type,
-            checkpoint_path=self.vlm_path,
-            device=self.device,
-        )
-        for p in self.vlm.parameters():
-            p.requires_grad = train_vlm
+        # self.vlm = NegDriveVLM(     # TODO ori: ReCogDriveBackbone
+        #     model_type=self.vlm_type,
+        #     checkpoint_path=self.vlm_path,
+        #     device=self.device,
+        # )
+        # for p in self.vlm.parameters():
+        #     p.requires_grad = train_vlm
 
-        if self.cache_hidden_state or self.cache_mode:  # TODO 这个 mode 干嘛的
-            raise ValueError(
-                "cache_hidden_state=True or cache_mode=True is incompatible with VLM RL training "
-            )
+        # if self.cache_hidden_state or self.cache_mode:  # TODO 这个 mode 干嘛的
+        #     raise ValueError(
+        #         "cache_hidden_state=True or cache_mode=True is incompatible with VLM RL training "
+        #     )
         
-        # -----------------------
-        # Diffusion planner (frozen)
-        # -----------------------
-        self.freeze_diffusion = freeze_diffusion
+        # # -----------------------
+        # # Diffusion planner (frozen)
+        # # -----------------------
+        # self.freeze_diffusion = freeze_diffusion
         
-        self.dit_type = dit_type
+        # self.dit_type = dit_type
 
-        self.metric_cache_path = metric_cache_path
-        self.reference_policy_checkpoint = reference_policy_checkpoint
+        # self.metric_cache_path = metric_cache_path
+        # self.reference_policy_checkpoint = reference_policy_checkpoint
 
-        if self.freeze_diffusion:
-            input_dim = 1536 if vlm_size == "large" else 384
-            cfg = make_diffusion_planner_config(   
-                    self.dit_type, 
-                    action_dim=3, 
-                    action_horizon=8, 
-                    grpo=False, 
-                    input_embedding_dim=input_dim,
-                    sampling_method=sampling_method
-                    )
-            self.action_head = NegDriveDiffusionPlanner(cfg).to(self.device)    #TODO head 
-            for p in self.action_head.parameters():
-                p.requires_grad = False
+        # if self.freeze_diffusion:
+        #     input_dim = 1536 if vlm_size == "large" else 384
+        #     cfg = make_diffusion_planner_config(   
+        #             self.dit_type, 
+        #             action_dim=3, 
+        #             action_horizon=8, 
+        #             grpo=False, 
+        #             input_embedding_dim=input_dim,
+        #             sampling_method=sampling_method
+        #             )
+        #     self.action_head = NegDriveDiffusionPlanner(cfg).to(self.device)    #TODO head 
+        #     for p in self.action_head.parameters():
+        #         p.requires_grad = False
             
-        else:
-            raise NotImplementedError
+        # else:
+        #     raise NotImplementedError
 
-        # optional planner checkpoint
-        self.checkpoint_path = diff_checkpoint_path  # TODO
-        # if checkpoint_path: 
-        #     self._load_planner_checkpoint(checkpoint_path)  # TODO
+        # # optional planner checkpoint
+        # self.checkpoint_path = diff_checkpoint_path  # TODO
+        # # if checkpoint_path: 
+        # #     self._load_planner_checkpoint(checkpoint_path)  # TODO
 
 
-        # -----------------------
-        # GRPO / RL parameters
-        # -----------------------
-        self.reward_scale = reward_scale
-        self.entropy_coef = entropy_coef
-        self.kl_coef = kl_coef
+        # # -----------------------
+        # # GRPO / RL parameters
+        # # -----------------------
+        # self.reward_scale = reward_scale
+        # self.entropy_coef = entropy_coef
+        # self.kl_coef = kl_coef
 
-        self.reference_policy_checkpoint = reference_policy_checkpoint
-        self.metric_cache_path = metric_cache_path  # TODO
+        # self.reference_policy_checkpoint = reference_policy_checkpoint
+        # self.metric_cache_path = metric_cache_path  # TODO
 
-        # -----------------------
-        # optimizer
-        # -----------------------
-        self._lr = lr
+        # # -----------------------
+        # # optimizer
+        # # -----------------------
+        # self._lr = lr
 
-        # -----------------------
-        # others TOOD
-        # -----------------------
-        self.num_inference_samples = 1
-        self.inference_selection_mode = "median"
+        # # -----------------------
+        # # others TOOD
+        # # -----------------------
+        # self.num_inference_samples = 1
+        # self.inference_selection_mode = "median"
 
 
     def name(self) -> str:
         return self.__class__.__name__
 
 
-    def initialize(self) -> None:   # TODO 根据使用的位置，再看要不要改
+    def initialize(self) -> None:   # TODO 
 
         if self.checkpoint_path:
             ckpt = torch.load(self.checkpoint_path, map_location="cpu")["state_dict"]
@@ -179,6 +176,7 @@ class NegDriveAgent(AbstractAgent):
                 if k2 in model_dict and v.shape == model_dict[k2].shape:
                     filtered_ckpt[k2] = v
             self.load_state_dict(filtered_ckpt, strict=False)
+
 
     # def initialize(self) -> None: 
     #     """
