@@ -1,5 +1,12 @@
 
 export NAVSIM_EXP_ROOT="/root/autodl-tmp/exps/nv"     # exp log 存放
+
+export NAVSIM_DEVKIT_ROOT="/root/recogdrive/"
+export OPENSCENE_DATA_ROOT="/root/autodl-tmp/Dataset/navtrain_tiny"
+export NUPLAN_MAPS_ROOT="$OPENSCENE_DATA_ROOT/maps"
+export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
+
+
 TRAIN_TEST_SPLIT=navtrain   # data
 EXP_NAME=tmp_test
 

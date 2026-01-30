@@ -113,7 +113,14 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
     :param agent: interface of agents in NAVSIM
     :return: tuple for training and validation dataset
     """
-#     train_scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
+    
+    train_scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
+
+    print('SceneFilter Initialized.')
+
+    pdb.set_trace()
+
+
 #     if train_scene_filter.log_names is not None:
 #         train_scene_filter.log_names = [
 #             log_name for log_name in train_scene_filter.log_names if log_name in cfg.train_logs
@@ -236,9 +243,6 @@ def main(cfg: DictConfig) -> None:
     else:
         logger.info("Building SceneLoader")
 
-        pdb.set_trace()
-
-        raise NotImplementedError
         # train_data, val_data = build_datasets(cfg, agent)
 
     logger.info("Building Datasets")
