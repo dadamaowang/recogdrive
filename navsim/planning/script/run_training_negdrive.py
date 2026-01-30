@@ -108,48 +108,46 @@ def custom_collate_fn(
 
 def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Dataset]: # TODO
     """
-    Builds training and validation datasets from omega config
+    Builds training and validation datasets from omega config 
     :param cfg: omegaconf dictionary
     :param agent: interface of agents in NAVSIM
     :return: tuple for training and validation dataset
+
+    REMARKS:
+        - 如果是 navtrain, 这里训练数据 build 来自 'trainval' 目录
     """
     
     train_scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
 
-    print('SceneFilter Initialized.')
+    if train_scene_filter.log_names is not None:
+        train_scene_filter.log_names = [
+            log_name for log_name in train_scene_filter.log_names if log_name in cfg.train_logs
+        ]
+    else:
+        train_scene_filter.log_names = cfg.train_logs
+    
+    val_scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
+    if val_scene_filter.log_names is not None:
+        val_scene_filter.log_names = [log_name for log_name in val_scene_filter.log_names if log_name in cfg.val_logs]
+    else:
+        val_scene_filter.log_names = cfg.val_logs
 
-    pdb.set_trace()
+    data_path = Path(cfg.navsim_log_path)
+    sensor_blobs_path = Path(cfg.sensor_blobs_path)
 
+    train_scene_loader = SceneLoader(
+        sensor_blobs_path=sensor_blobs_path,
+        data_path=data_path,
+        scene_filter=train_scene_filter,
+        sensor_config=agent.get_sensor_config(),
+    )
 
-#     if train_scene_filter.log_names is not None:
-#         train_scene_filter.log_names = [
-#             log_name for log_name in train_scene_filter.log_names if log_name in cfg.train_logs
-#         ]
-#     else:
-#         train_scene_filter.log_names = cfg.train_logs
-
-#     val_scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
-#     if val_scene_filter.log_names is not None:
-#         val_scene_filter.log_names = [log_name for log_name in val_scene_filter.log_names if log_name in cfg.val_logs]
-#     else:
-#         val_scene_filter.log_names = cfg.val_logs
-
-#     data_path = Path(cfg.navsim_log_path)
-#     sensor_blobs_path = Path(cfg.sensor_blobs_path)
-
-#     train_scene_loader = SceneLoader(
-#         sensor_blobs_path=sensor_blobs_path,
-#         data_path=data_path,
-#         scene_filter=train_scene_filter,
-#         sensor_config=agent.get_sensor_config(),
-#     )
-
-#     val_scene_loader = SceneLoader(
-#         sensor_blobs_path=sensor_blobs_path,
-#         data_path=data_path,
-#         scene_filter=val_scene_filter,
-#         sensor_config=agent.get_sensor_config(),
-#     )
+    val_scene_loader = SceneLoader(
+        sensor_blobs_path=sensor_blobs_path,
+        data_path=data_path,
+        scene_filter=val_scene_filter,
+        sensor_config=agent.get_sensor_config(),
+    )
 
 #     train_data = Dataset(
 #         scene_loader=train_scene_loader,
@@ -158,6 +156,12 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
 #         cache_path=cfg.cache_path,
 #         force_cache_computation=cfg.force_cache_computation,
 #     )
+
+
+
+    print('val scene loader is got')
+
+    pdb.set_trace()
 
 #     val_data = Dataset(
 #         scene_loader=val_scene_loader,
@@ -242,8 +246,8 @@ def main(cfg: DictConfig) -> None:
         pdb.set_trace()
     else:
         logger.info("Building SceneLoader")
+        train_data, val_data = build_datasets(cfg, agent)
 
-        # train_data, val_data = build_datasets(cfg, agent)
 
     logger.info("Building Datasets")
     train_dataloader = DataLoader(
