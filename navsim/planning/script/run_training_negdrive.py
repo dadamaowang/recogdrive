@@ -149,17 +149,15 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         sensor_config=agent.get_sensor_config(),
     )
 
-#     train_data = Dataset(
-#         scene_loader=train_scene_loader,
-#         feature_builders=agent.get_feature_builders(),
-#         target_builders=agent.get_target_builders(),
-#         cache_path=cfg.cache_path,
-#         force_cache_computation=cfg.force_cache_computation,
-#     )
+    train_data = Dataset(
+        scene_loader=train_scene_loader,
+        feature_builders=agent.get_feature_builders(),
+        target_builders=agent.get_target_builders(),
+        cache_path=cfg.cache_path,
+        force_cache_computation=cfg.force_cache_computation,
+    )
 
-
-
-    print('val scene loader is got')
+    print('train data all set.')
 
     pdb.set_trace()
 

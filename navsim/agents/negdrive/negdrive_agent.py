@@ -30,7 +30,10 @@ from nuplan.planning.simulation.trajectory.trajectory_sampling import Trajectory
 # from .utils.internvl_preprocess import load_image
 # from .utils.lr_scheduler import WarmupCosLR
 # from .utils.utils import format_number, build_from_configs
-# from .recogdrive_features import ReCogDriveFeatureBuilder ,TrajectoryTargetBuilder
+
+from .negdrive_features import NegDriveFeatureBuilder, NegDriveTrajectoryTargetBuilder
+
+
 # from .recogdrive_backbone import RecogDriveBackbone
 # from .recogdrive_diffusion_planner import (
 #     ReCogDriveDiffusionPlanner,
@@ -51,7 +54,7 @@ class NegDriveAgent(AbstractAgent):
         vlm_size: str = "large",
         train_vlm: bool = True,                 
         cache_hidden_state: bool = False,       # TODO must be False for RL
-        cache_mode: bool = False,
+        cache_mode: bool = False,   # TODO cache_mode ? 
 
         # ========== DIFFUSION (DECODER) ==========
         dit_type: str = "small",
@@ -81,8 +84,8 @@ class NegDriveAgent(AbstractAgent):
         self._trajectory_sampling = trajectory_sampling     # TODO
         self.device = device or f"cuda:{int(os.getenv('LOCAL_RANK', 0))}"
 
-        # self.cache_mode = cache_mode
-        # self.cache_hidden_state = cache_hidden_state
+        self.cache_mode = cache_mode
+        self.cache_hidden_state = cache_hidden_state
 
         # # -----------------------
         # # VLM (policy network)
@@ -238,14 +241,15 @@ class NegDriveAgent(AbstractAgent):
         return SensorConfig.build_all_sensors(include=[0, 1, 2, 3])
 
     def get_target_builders(self) -> List[AbstractTargetBuilder]:
-        return [TrajectoryTargetBuilder(trajectory_sampling=self._trajectory_sampling)]
-
+        return [NegDriveTrajectoryTargetBuilder(trajectory_sampling=self._trajectory_sampling)]
 
     def get_feature_builders(self) -> List[AbstractFeatureBuilder]:
-        return [ReCogDriveFeatureBuilder(   # TODO new feature builder ?
+        return [NegDriveFeatureBuilder(   
             cache_hidden_state=self.cache_hidden_state,
-            model_type=self.vlm_type,
-            checkpoint_path=self.vlm_path,
+            # model_type=self.vlm_type,  # TODO 
+            # checkpoint_path=self.vlm_path,
+            model_type=None,
+            checkpoint_path=None,
             device=self.device,
             cache_mode=self.cache_mode,
         )]

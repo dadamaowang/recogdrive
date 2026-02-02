@@ -1,11 +1,12 @@
 
-export NAVSIM_EXP_ROOT="/root/autodl-tmp/exps/nv"     # exp log 存放
+export NAVSIM_EXP_ROOT="/root/autodl-tmp/exps/nv"     # exp log 存放; cache_dataset 位置存放
 
 export NAVSIM_DEVKIT_ROOT="/root/recogdrive/"
 export OPENSCENE_DATA_ROOT="/root/autodl-tmp/Dataset/navtrain_tiny"
 export NUPLAN_MAPS_ROOT="$OPENSCENE_DATA_ROOT/maps"
 export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
+CACHE_PATH=$NAVSIM_EXP_ROOT/negdrive_mc_train   # 这里是通过 run_metric_caching_train/test 脚本搞的 metric_caching
 
 TRAIN_TEST_SPLIT=navtrain   # data
 EXP_NAME=tmp_test
@@ -55,6 +56,7 @@ torchrun \
     navsim/planning/script/run_training_negdrive.py \
     train_test_split=$TRAIN_TEST_SPLIT \
     experiment_name=$EXP_NAME \
+    cache_path=$CACHE_PATH \
     agent=negdrive_agent 
 
 
