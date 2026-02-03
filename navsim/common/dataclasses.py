@@ -384,14 +384,15 @@ class Scene:
     def _build_map_api(cls, map_name: str) -> AbstractMap:
         """Helper classmethod to load map api from name."""
 
-        print(f'Map Name: {map_name}')
-        print(f'MAP LOCATIONS: {MAP_LOCATIONS}')
-        pdb.set_trace()        
 
         assert map_name in MAP_LOCATIONS, f"The map name {map_name} is invalid, must be in {MAP_LOCATIONS}"
 
-        print(f'Map Name: {map_name}')
-        pdb.set_trace()
+        # -----
+        # 这里有问题
+
+        tmp_api = get_maps_api(NUPLAN_MAPS_ROOT, "nuplan-maps-v1.0", map_name)
+        print(f'Map API: {tmp_api}')
+        pdb.set_trace()        
 
         return get_maps_api(NUPLAN_MAPS_ROOT, "nuplan-maps-v1.0", map_name)
 
