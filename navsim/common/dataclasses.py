@@ -23,6 +23,9 @@ from navsim.planning.simulation.planner.pdm_planner.utils.pdm_geometry_utils imp
     convert_absolute_to_relative_se2_array,
 )
 
+
+import pdb
+
 NAVSIM_INTERVAL_LENGTH: float = 0.5
 OPENSCENE_DATA_ROOT = os.environ.get("OPENSCENE_DATA_ROOT")
 NUPLAN_MAPS_ROOT = os.environ.get("NUPLAN_MAPS_ROOT")
@@ -441,6 +444,10 @@ class Scene:
             num_future_frames=num_future_frames,
         )
         map_api = cls._build_map_api(scene_metadata.map_name)
+
+
+        print('正常')
+        pdb.set_trace()
 
         frames: List[Frame] = []
         for frame_idx in range(len(scene_dict_list)):

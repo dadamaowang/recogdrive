@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List
+
 from pathlib import Path
 
 from tqdm import tqdm
@@ -9,6 +10,8 @@ import lzma
 
 from navsim.common.dataclasses import AgentInput, Scene, SceneFilter, SensorConfig
 from navsim.planning.metric_caching.metric_cache import MetricCache
+
+import pdb
 
 
 def filter_scenes(data_path: Path, scene_filter: SceneFilter) -> Dict[str, List[Dict[str, Any]]]:
@@ -127,6 +130,19 @@ class SceneLoader:
         :return: scene dataclass
         """
         assert token in self.tokens
+
+        tmp = Scene.from_scene_dict_list(
+            self.scene_frames_dicts[token],
+            self._sensor_blobs_path,
+            num_history_frames=self._scene_filter.num_history_frames,
+            num_future_frames=self._scene_filter.num_future_frames,
+            sensor_config=self._sensor_config,
+            load_image_path=self.load_image_path            
+        )
+
+        print('拿到 Scene')
+        pdb.set_trace()
+
         return Scene.from_scene_dict_list(
             self.scene_frames_dicts[token],
             self._sensor_blobs_path,

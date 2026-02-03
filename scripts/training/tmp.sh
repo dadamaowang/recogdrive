@@ -33,6 +33,7 @@ export CUDA_LAUNCH_BLOCKING=1
 
 export HYDRA_FULL_ERROR=1
 
+
 # torchrun \
 #     --standalone \
 #     --nproc_per_node=1 \
@@ -57,29 +58,26 @@ torchrun \
     train_test_split=$TRAIN_TEST_SPLIT \
     experiment_name=$EXP_NAME \
     cache_path=$CACHE_PATH \
-    agent=negdrive_agent 
+    agent=negdrive_agent \
+    force_cache_computation=False
 
 
-# -----------------
-# agent config
-# -----------------
-    # agent=negdrive_agent   navsim/planning/script/config/common/agent/[negdrive_agent].yaml
-    # agent.lr=1e-4 \
-    # agent.vlm_path='/path/to/pretrain_model' \
-    # agent.cam_type='single' \
-    # agent.grpo=True \
-    # agent.cache_hidden_state=True \
-    # agent.vlm_type="internvl" \
-    # agent.checkpoint_path="'$CHECKPOINT'" \
-    # agent.dit_type="small" \
-    # agent.vlm_size="small" \
-    # agent.sampling_method="ddim" \
-    # agent.metric_cache_path="/path/to/metric_cache_dir" \
-    # agent.reference_policy_checkpoint="'$CHECKPOINT'" \
-    # trainer.params.max_epochs=10 \
-    # dataloader.params.batch_size=8 \
-    # experiment_name=training_internvl_agent_dit \
-    # train_test_split=$TRAIN_TEST_SPLIT \
-    # cache_path="/path/to/recogdrive_agent_cache_dir_train" \
-    # use_cache_without_dataset=True \
-    # force_cache_computation=False > train_negdriv_test01.txt 2>&1
+
+
+# -----------------------------
+# ONE GPU 参数说明
+# ----------------------------
+
+# export CUDA_VISIBLE_DEVICES=0  
+
+# torchrun \
+#     --standalone \
+#     --nproc_per_node=1 \
+#     navsim/planning/script/run_training_negdrive.py \
+#     train_test_split=$TRAIN_TEST_SPLIT \
+#     experiment_name=$EXP_NAME \
+#     cache_path=$CACHE_PATH \
+#     agent=negdrive_agent \
+#     force_cache_computation=False 这里记住必须 False 不然 cache 的时候 bug
+
+

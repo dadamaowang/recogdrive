@@ -1,3 +1,20 @@
+# -*- encoding: utf-8 -*-
+'''
+@File    :   dataset.py
+@Time    :   2026/02/02 22:06:24
+@Author  :   Nuoqian Xiao
+@Version :   0.0.1
+@Contact :   feimaoxiaotianshi@outlook.com
+@License :   (C)Copyright 2024-2025, Nuoqian Xiao
+@Status  :   None
+@Desc    :   None
+'''
+
+
+
+
+import pdb
+
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 import logging
@@ -188,6 +205,7 @@ class Dataset(torch.utils.data.Dataset):
                         valid_cache_paths[token_path.name] = token_path
 
         return valid_cache_paths
+
     def load_token_cache(self, token: str) -> None:
         scene = self._scene_loader.get_scene_from_token(token)
 
@@ -203,12 +221,27 @@ class Dataset(torch.utils.data.Dataset):
         :param token: unique identifier of scene to cache
         """
 
-        scene = self._scene_loader.get_scene_from_token(token)
+        print('检查 Cache_scene with token:')
+
+
+        scene = self._scene_loader.get_scene_from_
+        token(token)
+
+        print('获得了 scene ')
+        pdb.set_trace()
+
+
         agent_input = scene.get_agent_input()
 
         metadata = scene.scene_metadata
         token_path = self._cache_path / metadata.log_name / metadata.initial_token
         os.makedirs(token_path, exist_ok=True)
+
+
+        print('Builder 之前')
+
+        pdb.set_trace()
+
 
         for builder in self._feature_builders:
             data_dict_path = token_path / (builder.get_unique_name() + ".gz")
@@ -266,7 +299,7 @@ class Dataset(torch.utils.data.Dataset):
                 You can cache large numbers of tokens using the `run_dataset_caching.py` python script.
                 """
             )
-
+        
         for token in tqdm(tokens_to_cache, desc="Caching Dataset"):
             self._cache_scene_with_token(token)
 

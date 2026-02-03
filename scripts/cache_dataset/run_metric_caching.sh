@@ -1,10 +1,13 @@
 TRAIN_TEST_SPLIT=navtest
+
+export NAVSIM_DEVKIT_ROOT="/root/recogdrive/"
+
 export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
-export NUPLAN_MAPS_ROOT="/path/to/NAVSIM/dataset/maps"
-export NAVSIM_EXP_ROOT="/path/to/NAVSIM/exp"
-export NAVSIM_DEVKIT_ROOT="/path/to/NAVSIM/navsim-main"
-export OPENSCENE_DATA_ROOT="/path/to/NAVSIM/dataset"
-CACHE_PATH=$NAVSIM_EXP_ROOT/metric_cache
+export OPENSCENE_DATA_ROOT="/root/autodl-tmp/Dataset/navtrain_tiny"
+export NUPLAN_MAPS_ROOT="$OPENSCENE_DATA_ROOT/maps"
+
+export NAVSIM_EXP_ROOT="/root/autodl-tmp/exps/nv"
+CACHE_PATH=$NAVSIM_EXP_ROOT/negdrive_mc_test
 
 python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_metric_caching.py \
 train_test_split=$TRAIN_TEST_SPLIT \
