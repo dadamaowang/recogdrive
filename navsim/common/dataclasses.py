@@ -383,7 +383,16 @@ class Scene:
     @classmethod
     def _build_map_api(cls, map_name: str) -> AbstractMap:
         """Helper classmethod to load map api from name."""
+
+        print(f'Map Name: {map_name}')
+        print(f'MAP LOCATIONS: {MAP_LOCATIONS}')
+        pdb.set_trace()        
+
         assert map_name in MAP_LOCATIONS, f"The map name {map_name} is invalid, must be in {MAP_LOCATIONS}"
+
+        print(f'Map Name: {map_name}')
+        pdb.set_trace()
+
         return get_maps_api(NUPLAN_MAPS_ROOT, "nuplan-maps-v1.0", map_name)
 
     @classmethod
@@ -435,6 +444,8 @@ class Scene:
         :return: scene dataclass
         """
         assert len(scene_dict_list) >= 0, "Scene list is empty!"
+
+
         scene_metadata = SceneMetadata(
             log_name=scene_dict_list[num_history_frames - 1]["log_name"],
             scene_token=scene_dict_list[num_history_frames - 1]["scene_token"],
@@ -443,8 +454,10 @@ class Scene:
             num_history_frames=num_history_frames,
             num_future_frames=num_future_frames,
         )
-        map_api = cls._build_map_api(scene_metadata.map_name)
 
+
+
+        map_api = cls._build_map_api(scene_metadata.map_name)
 
         print('正常')
         pdb.set_trace()
