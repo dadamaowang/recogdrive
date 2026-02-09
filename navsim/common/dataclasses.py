@@ -384,17 +384,8 @@ class Scene:
     def _build_map_api(cls, map_name: str) -> AbstractMap:
         """Helper classmethod to load map api from name."""
 
-
         assert map_name in MAP_LOCATIONS, f"The map name {map_name} is invalid, must be in {MAP_LOCATIONS}"
-
-        # -----
-        # 这里有问题
-
-        tmp_api = get_maps_api(NUPLAN_MAPS_ROOT, "nuplan-maps-v1.0", map_name)
-        print(f'Map API: {tmp_api}')
-        pdb.set_trace()        
-
-        return get_maps_api(NUPLAN_MAPS_ROOT, "nuplan-maps-v1.0", map_name)
+        return get_maps_api(NUPLAN_MAPS_ROOT, "nuplan-maps-v1.0", map_name)    # TODO bug here
 
     @classmethod
     def _build_annotations(cls, scene_frame: Dict) -> Annotations:
@@ -455,8 +446,6 @@ class Scene:
             num_history_frames=num_history_frames,
             num_future_frames=num_future_frames,
         )
-
-
 
         map_api = cls._build_map_api(scene_metadata.map_name)
 

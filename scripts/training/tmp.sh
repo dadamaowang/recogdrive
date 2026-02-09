@@ -1,8 +1,8 @@
 
-export NAVSIM_EXP_ROOT="/root/autodl-tmp/exps/nv"     # exp log 存放; cache_dataset 位置存放
+export NAVSIM_EXP_ROOT="/root/autodl-tmp/navsim_workspace/exp"     # exp log 存放; cache_dataset 位置存放
 
 export NAVSIM_DEVKIT_ROOT="/root/recogdrive/"
-export OPENSCENE_DATA_ROOT="/root/autodl-tmp/Dataset/navtrain_tiny"
+export OPENSCENE_DATA_ROOT="/root/autodl-tmp/navsim_workspace/dataset"
 export NUPLAN_MAPS_ROOT="$OPENSCENE_DATA_ROOT/maps"
 export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
@@ -11,6 +11,20 @@ CACHE_PATH=$NAVSIM_EXP_ROOT/negdrive_mc_train   # 这里是通过 run_metric_cac
 TRAIN_TEST_SPLIT=navtrain   # data
 EXP_NAME=tmp_test
 
+
+
+# --------
+# Debug
+# -------
+
+
+export HYDRA_FULL_ERROR=1
+export TORCH_DISTRIBUTED_DEBUG=DETAIL
+export TORCHELASTIC_ERROR_FILE=tmp_error.json
+
+# --------
+# ONE GPU 
+# -------
 
 export MASTER_PORT=63669
 export PORT=63665
@@ -31,24 +45,6 @@ export PORT=${PORT}
 echo "GPUS: ${GPUS}"
 export CUDA_LAUNCH_BLOCKING=1
 
-export HYDRA_FULL_ERROR=1
-
-
-# torchrun \
-#     --standalone \
-#     --nproc_per_node=1 \
-#     --nnodes=1 \
-#     --node_rank=$MLP_ROLE_INDEX \
-#     --master_addr=$MLP_WORKER_0_HOST \
-#     --nproc_per_node=${GPUS} \
-#     --master_port=$MLP_WORKER_0_PORT \
-#     navsim/planning/script/run_training_negdrive.py 
-
-
-# --------
-# ONE GPU 
-# -------
-
 export CUDA_VISIBLE_DEVICES=0  
 
 torchrun \
@@ -59,7 +55,7 @@ torchrun \
     experiment_name=$EXP_NAME \
     cache_path=$CACHE_PATH \
     agent=negdrive_agent \
-    force_cache_computation=False
+    force_cache_computation=True \
 
 
 
@@ -78,6 +74,6 @@ torchrun \
 #     experiment_name=$EXP_NAME \
 #     cache_path=$CACHE_PATH \
 #     agent=negdrive_agent \
-#     force_cache_computation=False 这里记住必须 False 不然 cache 的时候 bug
+#     force_cache_computation=False 不知道这个什么意思
 
 
