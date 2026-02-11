@@ -9,7 +9,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 CACHE_PATH=$NAVSIM_EXP_ROOT/metric_cache_train  # 这里是通过 run_metric_caching_train/test 脚本搞的 metric_caching
 
 TRAIN_TEST_SPLIT=navtrain   # data
-EXP_NAME=tmp_test_0210
+EXP_NAME=tmp_test_0211
 
 
 # --------
@@ -105,4 +105,9 @@ torchrun \
     experiment_name=$EXP_NAME \
     cache_path=$CACHE_PATH \
     agent=negdrive_agent \
-    force_cache_computation=False 
+    force_cache_computation=False \
+    dataloader.params.batch_size=2 \
+    trainer.params.max_epochs=4 \
+    trainer.params.strategy="ddp_find_unused_parameters_true" \
+    trainer.params.limit_train_batches=0.0005 \
+    trainer.params.limit_val_batches=0.0005 

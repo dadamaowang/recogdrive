@@ -57,24 +57,18 @@ def custom_collate_fn(
     print('tokens_list')
     print(tokens_list)
 
-
-
     # extract features 
     history_trajectory = torch.stack([features['history_trajectory'] for features in features_list], dim=0).cpu()
     print('history_trajectory')
     print(history_trajectory)
 
-
     high_command_one_hot = torch.stack([features['high_command_one_hot'] for features in features_list], dim=0).cpu()
     print('high_command_one_hot')
     print(high_command_one_hot)
 
-
     status_feature = torch.stack([features['status_feature'] for features in features_list], dim=0).cpu()   
     print('status_feature')
     print(status_feature)
- 
-
 
     last_hidden_state = rnn_utils.pad_sequence(   # pad to same length
         [features['last_hidden_state'] for features in features_list],
@@ -84,13 +78,10 @@ def custom_collate_fn(
     print('last_hidden_state')
     print(last_hidden_state)
  
-
     # extract targets
     trajectory = torch.stack([targets['trajectory'] for targets in targets_list], dim=0).cpu()
     print('trajectory')
     print(trajectory)
-
-
 
     features = {
         'history_trajectory': history_trajectory,
@@ -234,30 +225,29 @@ def main(cfg: DictConfig) -> None:
 
 
     logger.info("Building DataLoader")
-    # train_dataloader = DataLoader(
-    #     train_data,
-    #     collate_fn=custom_collate_fn,   # TODO to print
-    #     **cfg.dataloader.params,
-    #     shuffle=True
-    # )
-    # logger.info("Num training samples: %d", len(train_data))
-    # val_dataloader = DataLoader(
-    #     val_dataset,
-    #     collate_fn=custom_collate_fn,
-    #     **cfg.dataloader.params,
-    #     shuffle=False
-    # )
-    # logger.info("Num validation samples: %d", len(val_data))
-    # pdb.set_trace()
+    train_dataloader = DataLoader(
+        train_data,
+        collate_fn=custom_collate_fn,   # TODO to print
+        **cfg.dataloader.params,
+        shuffle=True
+    )
+    logger.info("Num training samples: %d", len(train_data))
+    val_dataloader = DataLoader(
+        val_data,
+        collate_fn=custom_collate_fn,
+        **cfg.dataloader.params,
+        shuffle=False
+    )
+    logger.info("Num validation samples: %d", len(val_data))
 
-    # logger.info("Building Trainer")
-    # trainer = pl.Trainer(
-    #     **cfg.trainer.params,   # TODO 
-    #     callbacks=[pl.callbacks.ModelCheckpoint
-    #                (monitor="val/loss_epoch",mode='min', save_top_k=5,every_n_epochs=1)])
-    #     # callbacks: Train normally, but also run this checkpoint-saving logic during training.
-    
-    # pdb.set_trace()
+    logger.info("Building Trainer")
+    trainer = pl.Trainer(
+        **cfg.trainer.params,   # TODO 
+        callbacks=[pl.callbacks.ModelCheckpoint
+                   (monitor="val/loss_epoch",mode='min', save_top_k=5,every_n_epochs=1)])
+        # callbacks: Train normally, but also run this checkpoint-saving logic during training.
+
+    print('------ SUCCESS !!! ---------')
 
     # logger.info("Starting Training")
     # trainer.fit(
