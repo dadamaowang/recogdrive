@@ -11,8 +11,6 @@ import lzma
 from navsim.common.dataclasses import AgentInput, Scene, SceneFilter, SensorConfig
 from navsim.planning.metric_caching.metric_cache import MetricCache
 
-import pdb
-
 
 def filter_scenes(data_path: Path, scene_filter: SceneFilter) -> Dict[str, List[Dict[str, Any]]]:
     """
@@ -139,9 +137,6 @@ class SceneLoader:
             sensor_config=self._sensor_config,
             load_image_path=self.load_image_path            
         )
-
-        print('拿到 Scene')
-        pdb.set_trace()
 
         return Scene.from_scene_dict_list(
             self.scene_frames_dicts[token],

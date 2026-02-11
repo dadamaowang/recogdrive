@@ -449,9 +449,6 @@ class Scene:
 
         map_api = cls._build_map_api(scene_metadata.map_name)
 
-        print('正常')
-        pdb.set_trace()
-
         frames: List[Frame] = []
         for frame_idx in range(len(scene_dict_list)):
             global_ego_status = cls._build_ego_status(scene_dict_list[frame_idx])

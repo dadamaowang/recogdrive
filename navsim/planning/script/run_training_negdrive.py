@@ -6,10 +6,9 @@
 @Version :   0.0.1
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :    单卡测试
+@Status  :    GPU DEBUG
 @Desc    :   None
 '''
-import pdb
 
 from typing import Tuple
 from pathlib import Path
@@ -41,7 +40,7 @@ CONFIG_NAME = "default_training"
 def custom_collate_fn(
         batch: List[
             Tuple[
-                Dict[str, torch.Tensor],    # features TODO 暂停看是什么（仅load数据看）
+                Dict[str, torch.Tensor],    # features TODO 使用数据的时候看一眼是啥东西
                 Dict[str, torch.Tensor],    # targets 
                 str     # tokens/prompt
                 ]]
@@ -58,23 +57,23 @@ def custom_collate_fn(
     print('tokens_list')
     print(tokens_list)
 
-    pdb.set_trace()
+
 
     # extract features 
     history_trajectory = torch.stack([features['history_trajectory'] for features in features_list], dim=0).cpu()
     print('history_trajectory')
     print(history_trajectory)
-    pdb.set_trace()
+
 
     high_command_one_hot = torch.stack([features['high_command_one_hot'] for features in features_list], dim=0).cpu()
     print('high_command_one_hot')
     print(high_command_one_hot)
-    pdb.set_trace()
+
 
     status_feature = torch.stack([features['status_feature'] for features in features_list], dim=0).cpu()   
     print('status_feature')
     print(status_feature)
-    pdb.set_trace() 
+ 
 
 
     last_hidden_state = rnn_utils.pad_sequence(   # pad to same length
@@ -84,13 +83,13 @@ def custom_collate_fn(
     ).clone().detach()
     print('last_hidden_state')
     print(last_hidden_state)
-    pdb.set_trace()
+ 
 
     # extract targets
     trajectory = torch.stack([targets['trajectory'] for targets in targets_list], dim=0).cpu()
     print('trajectory')
     print(trajectory)
-    pdb.set_trace()
+
 
 
     features = {
@@ -157,19 +156,15 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         force_cache_computation=cfg.force_cache_computation,
     )
 
-    print('----- train data all set. ---------------')
+    val_data = Dataset(
+        scene_loader=val_scene_loader,
+        feature_builders=agent.get_feature_builders(),
+        target_builders=agent.get_target_builders(),
+        cache_path=cfg.cache_path,
+        force_cache_computation=cfg.force_cache_computation,
+    )
 
-    pdb.set_trace()
-
-#     val_data = Dataset(
-#         scene_loader=val_scene_loader,
-#         feature_builders=agent.get_feature_builders(),
-#         target_builders=agent.get_target_builders(),
-#         cache_path=cfg.cache_path,
-#         force_cache_computation=cfg.force_cache_computation,
-#     )
-
-#     return train_data, val_data
+    return train_data, val_data
 
 
 
@@ -183,8 +178,6 @@ def main(cfg: DictConfig) -> None:
     world_size = int(os.getenv('WORLD_SIZE', 1))
     rank = int(os.getenv('RANK', 0))
 
-    # pdb.set_trace() 
-
     dist.init_process_group(
         backend='nccl',
         world_size=world_size,
@@ -194,20 +187,12 @@ def main(cfg: DictConfig) -> None:
     pl.seed_everything(cfg.seed, workers=True)
     logger.info(f"Global Seed set to {cfg.seed}")
 
-    # pdb.set_trace()
-
     logger.info(f"Path where all results are stored: {cfg.output_dir}") # 就在 NAVSIM_EXP_ROOT 下
-
-
-    # from navsim.agents.negdrive.negdrive_agent import NegDriveAgent
-    # print('init negdrive agent')
-    # pdb.set_trace()
-
 
     logger.info("Building Agent")
     agent: AbstractAgent = instantiate(cfg.agent)   # TODO 
 
-    # agent.initialize()
+    # agent.initialize() # TODO 
     # pdb.set_trace()
 
     logger.info("Building Lightning Module")    # TODO write Lightning module
@@ -215,70 +200,71 @@ def main(cfg: DictConfig) -> None:
         agent=agent,
     )
 
-
     if cfg.use_cache_without_dataset:   # If training VLM backbone, suggest(should) not use cache.
-        logger.info("Using cached data without building SceneLoader")
-        assert (
-            not cfg.force_cache_computation
-        ), "force_cache_computation must be False when using cached data without building SceneLoader"
-        assert (
-            cfg.cache_path is not None
-        ), "cache_path must be provided when using cached data without building SceneLoader"
+        raise NotImplementedError
 
-        # TODO 
-        # (1) CacheOnlyDataset 形式
-        # (2) agent get_feature_builders 和 get_target_builders
+        # logger.info("Using cached data without building SceneLoader")
+        # assert (
+        #     not cfg.force_cache_computation
+        # ), "force_cache_computation must be False when using cached data without building SceneLoader"
+        # assert (
+        #     cfg.cache_path is not None
+        # ), "cache_path must be provided when using cached data without building SceneLoader"
 
-        # train_data = CacheOnlyDataset(  
-        #     cache_path=cfg.cache_path,
-        #     feature_builders=agent.get_feature_builders(),
-        #     target_builders=agent.get_target_builders(),
-        #     log_names=cfg.train_logs,
-        # )
-        # val_data = CacheOnlyDataset(
-        #     cache_path=cfg.cache_path,
-        #     feature_builders=agent.get_feature_builders(),
-        #     target_builders=agent.get_target_builders(),
-        #     log_names=cfg.val_logs,
-        # )
-        pdb.set_trace()
-    else:
+        # # TODO 
+        # # (1) CacheOnlyDataset 形式
+        # # (2) agent get_feature_builders 和 get_target_builders
+
+        # # train_data = CacheOnlyDataset(  
+        # #     cache_path=cfg.cache_path,
+        # #     feature_builders=agent.get_feature_builders(),
+        # #     target_builders=agent.get_target_builders(),
+        # #     log_names=cfg.train_logs,
+        # # )
+        # # val_data = CacheOnlyDataset(
+        # #     cache_path=cfg.cache_path,
+        # #     feature_builders=agent.get_feature_builders(),
+        # #     target_builders=agent.get_target_builders(),
+        # #     log_names=cfg.val_logs,
+        # # )
+        # pdb.set_trace()
+    else:    
         logger.info("Building SceneLoader")
         train_data, val_data = build_datasets(cfg, agent)
 
 
-    logger.info("Building Datasets")
-    train_dataloader = DataLoader(
-        train_data,
-        collate_fn=custom_collate_fn,   # TODO to print
-        **cfg.dataloader.params,
-        shuffle=True
-    )
-    logger.info("Num training samples: %d", len(train_data))
-    val_dataloader = DataLoader(
-        val_dataset,
-        collate_fn=custom_collate_fn,
-        **cfg.dataloader.params,
-        shuffle=False
-    )
-    logger.info("Num validation samples: %d", len(val_data))
-    pdb.set_trace()
+    logger.info("Building DataLoader")
+    # train_dataloader = DataLoader(
+    #     train_data,
+    #     collate_fn=custom_collate_fn,   # TODO to print
+    #     **cfg.dataloader.params,
+    #     shuffle=True
+    # )
+    # logger.info("Num training samples: %d", len(train_data))
+    # val_dataloader = DataLoader(
+    #     val_dataset,
+    #     collate_fn=custom_collate_fn,
+    #     **cfg.dataloader.params,
+    #     shuffle=False
+    # )
+    # logger.info("Num validation samples: %d", len(val_data))
+    # pdb.set_trace()
 
-    logger.info("Building Trainer")
-    trainer = pl.Trainer(
-        **cfg.trainer.params,   # TODO 
-        callbacks=[pl.callbacks.ModelCheckpoint
-                   (monitor="val/loss_epoch",mode='min', save_top_k=5,every_n_epochs=1)])
-        # callbacks: Train normally, but also run this checkpoint-saving logic during training.
+    # logger.info("Building Trainer")
+    # trainer = pl.Trainer(
+    #     **cfg.trainer.params,   # TODO 
+    #     callbacks=[pl.callbacks.ModelCheckpoint
+    #                (monitor="val/loss_epoch",mode='min', save_top_k=5,every_n_epochs=1)])
+    #     # callbacks: Train normally, but also run this checkpoint-saving logic during training.
     
-    pdb.set_trace()
+    # pdb.set_trace()
 
-    logger.info("Starting Training")
-    trainer.fit(
-        model=lightning_module,
-        train_dataloaders=train_dataloader,
-        val_dataloaders=val_dataloader,
-    )
+    # logger.info("Starting Training")
+    # trainer.fit(
+    #     model=lightning_module,
+    #     train_dataloaders=train_dataloader,
+    #     val_dataloaders=val_dataloader,
+    # )
 
 
 if __name__ == "__main__":
