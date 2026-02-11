@@ -224,6 +224,8 @@ class AgentLightningVLMRL(pl.LightningModule):
         pass
 
     def configure_optimizers(self):
+        print('Configure Optimizers ...')
+
         # """Inherited, see superclass."""
         # return self.agent.get_optimizers()
         pass

@@ -240,16 +240,21 @@ def main(cfg: DictConfig) -> None:
     )
     logger.info("Num validation samples: %d", len(val_data))
 
+
     logger.info("Building Trainer")
     trainer = pl.Trainer(
-        **cfg.trainer.params,   # TODO 
-        callbacks=[pl.callbacks.ModelCheckpoint
-                   (monitor="val/loss_epoch",mode='min', save_top_k=5,every_n_epochs=1)])
-        # callbacks: Train normally, but also run this checkpoint-saving logic during training.
+        **cfg.trainer.params,    
+        enable_checkpointing=False
+    )
+    # logger.info("Building Trainer")
+    # trainer = pl.Trainer(
+    #     **cfg.trainer.params,   # TODO 
+    #     callbacks=[pl.callbacks.ModelCheckpoint
+    #                (monitor="val/loss_epoch",mode='min', save_top_k=5,every_n_epochs=1)])
+    #     # callbacks: Train normally, but also run this checkpoint-saving logic during training.
 
-    print('------ SUCCESS !!! ---------')
 
-    # logger.info("Starting Training")
+    logger.info("Starting Training")
     # trainer.fit(
     #     model=lightning_module,
     #     train_dataloaders=train_dataloader,

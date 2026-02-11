@@ -110,4 +110,5 @@ torchrun \
     trainer.params.max_epochs=4 \
     trainer.params.strategy="ddp_find_unused_parameters_true" \
     trainer.params.limit_train_batches=0.0005 \
-    trainer.params.limit_val_batches=0.0005 
+    trainer.params.limit_val_batches=0.0005 \
+    trainer.params.devices=2 
