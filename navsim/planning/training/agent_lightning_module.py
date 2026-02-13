@@ -14,6 +14,7 @@
 
 import pytorch_lightning as pl
 
+import torch
 from torch import Tensor
 from typing import Dict, Tuple,Any
 
@@ -209,9 +210,16 @@ class AgentLightningVLMRL(pl.LightningModule):
         # :param batch_idx: index of batch (ignored)
         # :return: scalar loss
         # """
+
+        # Minimal forward pass - just return a dummy loss
+        loss = torch.tensor(0.0, requires_grad=True, device=self.device)
+        
+        self.log("train/loss", loss)
+        return loss
+
         # #print(batch_idx)
         # return self._step(batch, "train")
-        pass
+        
 
     def validation_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int):
         # """
@@ -220,12 +228,14 @@ class AgentLightningVLMRL(pl.LightningModule):
         # :param batch_idx: index of batch (ignored)
         # :return: scalar loss
         # """
+
+        loss = torch.tensor(0.0, device=self.device)
+        
+        self.log("val/loss", loss)
         # return self._step(batch, "val")
-        pass
+
 
     def configure_optimizers(self):
         print('Configure Optimizers ...')
 
-        # """Inherited, see superclass."""
-        # return self.agent.get_optimizers()
-        pass
+        return self.agent.get_optimizers()

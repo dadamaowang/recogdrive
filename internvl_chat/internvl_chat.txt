@@ -7,7 +7,6 @@ einops-exts==0.0.4
 huggingface_hub
 imageio
 numpy==1.26.4
-opencv-python
 orjson
 peft==0.10.0
 pycocoevalcap
@@ -20,8 +19,6 @@ tensorboardX
 termcolor
 timm==0.9.12
 tokenizers==0.15.1
-torch>=2
-torchvision>=0.15
 tqdm
 transformers==4.37.2
 yacs

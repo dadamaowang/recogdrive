@@ -29,16 +29,17 @@ from nuplan.planning.simulation.trajectory.trajectory_sampling import Trajectory
 
 # from .utils.internvl_preprocess import load_image
 # from .utils.lr_scheduler import WarmupCosLR
-# from .utils.utils import format_number, build_from_configs
+from .utils.utils import format_number, build_from_configs
 
 from .negdrive_features import NegDriveFeatureBuilder, NegDriveTrajectoryTargetBuilder
 
-
+from .negdrive_backbone import NegDriveBackbone
 # from .recogdrive_backbone import RecogDriveBackbone
 # from .recogdrive_diffusion_planner import (
 #     ReCogDriveDiffusionPlanner,
 #     ReCogDriveDiffusionPlannerConfig,
 # )
+
 
 
 class NegDriveAgent(AbstractAgent):
@@ -87,27 +88,27 @@ class NegDriveAgent(AbstractAgent):
         self.cache_mode = cache_mode
         self.cache_hidden_state = cache_hidden_state
 
-        # # -----------------------
-        # # VLM (policy network)
-        # # -----------------------
-        # self.vlm_path = vlm_path
-        # self.vlm_type = vlm_type    # TODO
-        # self.vlm_size = vlm_size    # TODO
-        # self.train_vlm = train_vlm
-        # self.grpo = use_grpo    # TODO
+        # -----------------------
+        # VLM (policy network)
+        # -----------------------
+        self.vlm_path = vlm_path
+        self.vlm_type = vlm_type    # TODO
+        self.vlm_size = vlm_size    # TODO
+        self.train_vlm = train_vlm
+        self.grpo = use_grpo    # TODO
 
-        # self.vlm = NegDriveVLM(     # TODO ori: ReCogDriveBackbone
-        #     model_type=self.vlm_type,
-        #     checkpoint_path=self.vlm_path,
-        #     device=self.device,
-        # )
-        # for p in self.vlm.parameters():
-        #     p.requires_grad = train_vlm
+        self.vlm = NegDriveBackbone(     # TODO ori: ReCogDriveBackbone
+            model_type=self.vlm_type,
+            checkpoint_path=self.vlm_path,
+            device=self.device,
+        )
+        for p in self.vlm.parameters():
+            p.requires_grad = train_vlm
 
-        # if self.cache_hidden_state or self.cache_mode:  # TODO 这个 mode 干嘛的
-        #     raise ValueError(
-        #         "cache_hidden_state=True or cache_mode=True is incompatible with VLM RL training "
-        #     )
+        if self.cache_hidden_state or self.cache_mode:  # TODO
+            raise ValueError(
+                "cache_hidden_state=True or cache_mode=True is incompatible with VLM RL training "
+            )
         
         # # -----------------------
         # # Diffusion planner (frozen)
@@ -152,10 +153,10 @@ class NegDriveAgent(AbstractAgent):
         # self.reference_policy_checkpoint = reference_policy_checkpoint
         # self.metric_cache_path = metric_cache_path  # TODO
 
-        # # -----------------------
-        # # optimizer
-        # # -----------------------
-        # self._lr = lr
+        # -----------------------
+        # optimizer
+        # -----------------------
+        self._lr = lr
 
         # # -----------------------
         # # others TOOD

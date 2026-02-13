@@ -35,32 +35,33 @@ For evaluation, use the **PDM Score**, which combines these metrics: **PDM Score
 Your predictions will be evaluated through a non-reactive 4-second simulation with an LQR controller and background actors following their recorded trajectories. The better your predictions, the higher your score.
 """
 
-# class NegDriveBackbone(nn.Module):
-#     """
-#     A simplified vision-language model backbone with direct loading logic
-#     for different model architectures (InternVL, Qwen-VL).
-#     """
-#     def __init__(self,
-#                  model_type: str,
-#                  checkpoint_path: str,
-#                  device: str = "cuda"
-#                  ):
-#         """
-#         Initializes and loads the specified model and its preprocessor/tokenizer.
 
-#         Args:
-#             model_type (str): The type of model to load. Supported: 'internvl', 'qwen'.
-#             checkpoint_path (str): The path to the model checkpoint.
-#             device (str): The device to load the model onto ('cuda', 'cpu').
-#         """
-#         super().__init__()
+class NegDriveBackbone(nn.Module):
+    """
+    A simplified vision-language model backbone with direct loading logic
+    for different model architectures (InternVL, Qwen-VL).
+    """
+    def __init__(self,
+                 model_type: str,
+                 checkpoint_path: str,
+                 device: str = "cuda"
+                 ):
+        """
+        Initializes and loads the specified model and its preprocessor/tokenizer.
 
-#         self.model = None
-#         self.tokenizer = None  
-#         self.model_type = model_type.lower()
-#         self.device = device
+        Args:
+            model_type (str): The type of model to load. Supported: 'internvl', 'qwen'.
+            checkpoint_path (str): The path to the model checkpoint.
+            device (str): The device to load the model onto ('cuda', 'cpu').
+        """
+        super().__init__()
 
-#         print(f"Initializing backbone of type: '{self.model_type}' from path: '{checkpoint_path}'")
+        self.model = None
+        self.tokenizer = None  
+        self.model_type = model_type.lower()
+        self.device = device
+
+        print(f"Initializing backbone of type: '{self.model_type}' from path: '{checkpoint_path}'")
 
 #         if self.model_type == 'internvl':
 #             # --- Load InternVL Model and Tokenizer ---

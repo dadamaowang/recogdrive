@@ -7,7 +7,7 @@ trajectory_sampling:
   time_horizon: 4
   interval_length: 0.5
 # checkpoint_path: ''
-vlm_path: ''
+vlm_path: '/UserData/xnq/navsim_workspace/models/Policy/ReCogDrive-VLM-2B/'
 # cam_type: 'single'
 # vlm_type: 'internvl'
 # dit_type: 'small'
