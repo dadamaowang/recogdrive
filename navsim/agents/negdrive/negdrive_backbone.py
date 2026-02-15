@@ -63,42 +63,43 @@ class NegDriveBackbone(nn.Module):
 
         print(f"Initializing backbone of type: '{self.model_type}' from path: '{checkpoint_path}'")
 
-#         if self.model_type == 'internvl':
-#             # --- Load InternVL Model and Tokenizer ---
-#             self.model = AutoModel.from_pretrained(
-#                 checkpoint_path,
-#                 torch_dtype=torch.bfloat16,
-#                 low_cpu_mem_usage=True,
-#                 trust_remote_code=True,
-#                 use_flash_attn=True,
-#                 device_map=self.device
-#             ).eval()
-#             self.tokenizer = AutoTokenizer.from_pretrained(
-#                 checkpoint_path,
-#                 trust_remote_code=True,
-#                 use_fast=False
-#             )
-#             # Load model-specific configuration
-#             self._configure_internvl()
-#             self.num_image_token = 256
+        if self.model_type == "internvl":
+            # TODO : 只是一个 backbone ? 好像不是很合理
+            # （1） 改成加一个头，微调
+            # （2） COVT
+            self.model = AutoModel.from_pretrained(     
+                checkpoint_path,
+                torch_dtype=torch.bfloat16,
+                low_cpu_mem_usage=True,
+                trust_remote_code=True,
+                use_flash_attn=True,
+                device_map=self.device
+            )
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                checkpoint_path,
+                trust_remote_code=True,
+                use_fast=False
+            )
+            # Load model-specific configuration
+            self._configure_internvl()
+            self.num_image_token = 256
 
-#         elif self.model_type == 'qwen':
-#             self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-#                 checkpoint_path,
-#                 torch_dtype=torch.bfloat16,
-#                 device_map=self.device,
-#                 trust_remote_code=True
-#             )
-#             self.tokenizer = AutoProcessor.from_pretrained(
-#                 checkpoint_path,
-#                 trust_remote_code=True
-#             )
-            
-#         else:
-#             raise ValueError(f"Unsupported model_type: '{self.model_type}'. Please choose 'internvl' or 'qwen'.")
+        elif self.model_type == 'qwen':
+            raise NotImplementedError
+            # self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            #     checkpoint_path,
+            #     torch_dtype=torch.bfloat16,
+            #     device_map=self.device,
+            #     trust_remote_code=True
+            # )
+            # self.tokenizer = AutoProcessor.from_pretrained(
+            #     checkpoint_path,
+            #     trust_remote_code=True
+            # )
+        else:
+            raise ValueError(f"Unsupported model_type: '{self.model_type}'. Please choose 'internvl' or 'qwen'.")
 
-
-#         print(f"Backbone '{self.model_type}' loaded successfully on device '{self.device}'.")
+        print(f"Backbone '{self.model_type}' loaded successfully on device '{self.device}'.")
 
 #     def _configure_internvl(self):
 #         """Applies specific configurations required for the InternVL model."""

@@ -28,7 +28,7 @@ from navsim.planning.training.abstract_feature_target_builder import AbstractFea
 from nuplan.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
 
 # from .utils.internvl_preprocess import load_image
-# from .utils.lr_scheduler import WarmupCosLR
+from .utils.lr_scheduler import WarmupCosLR
 from .utils.utils import format_number, build_from_configs
 
 from .negdrive_features import NegDriveFeatureBuilder, NegDriveTrajectoryTargetBuilder
@@ -61,7 +61,7 @@ class NegDriveAgent(AbstractAgent):
         dit_type: str = "small",
         sampling_method: str = "ddim",
         freeze_diffusion: bool = True,           
-        diff_checkpoint_path: Optional[str] = None,
+        diff_path: Optional[str] = None,
 
         # ========== RL / GRPO ==========
         use_grpo: bool = True,
@@ -91,6 +91,11 @@ class NegDriveAgent(AbstractAgent):
         # -----------------------
         # VLM (policy network)
         # -----------------------
+        if self.cache_hidden_state or self.cache_mode:  # TODO
+            raise ValueError(
+                "cache_hidden_state=True or cache_mode=True is incompatible with VLM RL training "
+            )
+        
         self.vlm_path = vlm_path
         self.vlm_type = vlm_type    # TODO
         self.vlm_size = vlm_size    # TODO
@@ -102,13 +107,10 @@ class NegDriveAgent(AbstractAgent):
             checkpoint_path=self.vlm_path,
             device=self.device,
         )
-        for p in self.vlm.parameters():
-            p.requires_grad = train_vlm
+        # for p in self.vlm.parameters():
+        #     p.requires_grad = train_vlm
 
-        if self.cache_hidden_state or self.cache_mode:  # TODO
-            raise ValueError(
-                "cache_hidden_state=True or cache_mode=True is incompatible with VLM RL training "
-            )
+
         
         # # -----------------------
         # # Diffusion planner (frozen)
@@ -170,16 +172,41 @@ class NegDriveAgent(AbstractAgent):
 
 
     def initialize(self) -> None:   # TODO 
+        """
+        Initialize agent components from checkpoints.
 
-        if self.checkpoint_path:
-            ckpt = torch.load(self.checkpoint_path, map_location="cpu")["state_dict"]
-            model_dict = self.state_dict()
-            filtered_ckpt = {}
-            for k, v in ckpt.items():
-                k2 = k[len("agent."):] if k.startswith("agent.") else k
-                if k2 in model_dict and v.shape == model_dict[k2].shape:
-                    filtered_ckpt[k2] = v
-            self.load_state_dict(filtered_ckpt, strict=False)
+        Semantics:
+        - VLM checkpoint → trainable policy
+        - Diffusion checkpoint → frozen decoder
+        - GRPO reference policy → loaded separately
+        """
+        # -------------------------
+        # 1. Load VLM (policy)
+        # -------------------------
+        if self.vlm_path is not None:
+            vlm_ckpt = torch.load(self.vlm_path, map_location="cpu")
+            if "state_dict" in vlm_ckpt:
+                vlm_ckpt = vlm_ckpt["state_dict"]
+
+            missing, unexpected = self.vlm.load_state_dict(
+                vlm_ckpt, strict=False
+            )
+
+            if len(unexpected) > 0:
+                print(f"[VLM] Unexpected keys: {unexpected}")
+            if len(missing) > 0:
+                print(f"[VLM] Missing keys: {missing}")
+
+
+        # if self.checkpoint_path:
+        #     ckpt = torch.load(self.checkpoint_path, map_location="cpu")["state_dict"]
+        #     model_dict = self.state_dict()
+        #     filtered_ckpt = {}
+        #     for k, v in ckpt.items():
+        #         k2 = k[len("agent."):] if k.startswith("agent.") else k
+        #         if k2 in model_dict and v.shape == model_dict[k2].shape:
+        #             filtered_ckpt[k2] = v
+        #     self.load_state_dict(filtered_ckpt, strict=False)
 
 
     # def initialize(self) -> None: 
@@ -514,6 +541,8 @@ class NegDriveAgent(AbstractAgent):
             #                         epochs=200, 
             #                         warmup_epochs=3)
             
+        print('优化器加载成功；模型加载成功但是能不能训练待考察')
+
         return {'optimizer': optimizer, 'lr_scheduler': scheduler}
 
 
