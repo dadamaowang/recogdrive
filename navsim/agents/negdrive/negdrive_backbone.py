@@ -17,7 +17,7 @@ from torch import nn
 from transformers import AutoModel, AutoTokenizer
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-from .utils.conversation import get_conv_template
+# from .utils.conversation import get_conv_template
 
 IMG_CONTEXT_TOKEN = '<IMG_CONTEXT>'
 IMG_START_TOKEN = '<img>'
@@ -86,6 +86,7 @@ class NegDriveBackbone(nn.Module):
 
         elif self.model_type == 'qwen':
             raise NotImplementedError
+            # TODO qwen 也得 config
             # self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             #     checkpoint_path,
             #     torch_dtype=torch.bfloat16,
@@ -101,12 +102,14 @@ class NegDriveBackbone(nn.Module):
 
         print(f"Backbone '{self.model_type}' loaded successfully on device '{self.device}'.")
 
-#     def _configure_internvl(self):
-#         """Applies specific configurations required for the InternVL model."""
-#         self.model.system_message = system_message
-#         self.img_context_token_id = self.tokenizer.convert_tokens_to_ids(IMG_CONTEXT_TOKEN)
-#         self.model.img_context_token_id = self.img_context_token_id
-#         print("InternVL model configured.")
+
+    def _configure_internvl(self):
+        """Applies specific configurations required for the InternVL model."""
+        self.model.system_message = system_message
+        self.img_context_token_id = self.tokenizer.convert_tokens_to_ids(IMG_CONTEXT_TOKEN)
+        self.model.img_context_token_id = self.img_context_token_id
+        print("InternVL model configured.")
+        
     
 #     def forward(self, pixel_values: torch.Tensor, questions: List[str], num_patches_list: List[int]):
 #         if not self.model:

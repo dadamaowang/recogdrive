@@ -46,6 +46,10 @@ def custom_collate_fn(
                 ]]
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor], List[str]]:
 
+    print('------------- BATCH 内部 ----------------------')
+    print(batch)
+
+
     features_list, targets_list, tokens_list = zip(*batch)
 
     print('features_list:')
@@ -255,11 +259,11 @@ def main(cfg: DictConfig) -> None:
 
 
     logger.info("Starting Training")
-    # trainer.fit(
-    #     model=lightning_module,
-    #     train_dataloaders=train_dataloader,
-    #     val_dataloaders=val_dataloader,
-    # )
+    trainer.fit(
+        model=lightning_module,
+        train_dataloaders=train_dataloader,
+        val_dataloaders=val_dataloader,
+    )
 
 
 if __name__ == "__main__":

@@ -110,7 +110,6 @@ class NegDriveAgent(AbstractAgent):
         # for p in self.vlm.parameters():
         #     p.requires_grad = train_vlm
 
-
         
         # # -----------------------
         # # Diffusion planner (frozen)
@@ -191,12 +190,6 @@ class NegDriveAgent(AbstractAgent):
             missing, unexpected = self.vlm.load_state_dict(
                 vlm_ckpt, strict=False
             )
-
-            if len(unexpected) > 0:
-                print(f"[VLM] Unexpected keys: {unexpected}")
-            if len(missing) > 0:
-                print(f"[VLM] Missing keys: {missing}")
-
 
         # if self.checkpoint_path:
         #     ckpt = torch.load(self.checkpoint_path, map_location="cpu")["state_dict"]

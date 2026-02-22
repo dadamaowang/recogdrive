@@ -1,27 +1,97 @@
-from typing import Any, List, Dict, Optional, Union
-import os
-import torch
-from torch.optim import Optimizer
-import torch.optim as optim
-from torch.optim.lr_scheduler import LRScheduler
-from omegaconf import DictConfig, OmegaConf
-# from transformers.feature_extraction_utils import BatchFeature
-import math
 
-from navsim.agents.abstract_agent import AbstractAgent
-from navsim.common.dataclasses import AgentInput, SensorConfig, Trajectory
-from navsim.planning.training.abstract_feature_target_builder import AbstractFeatureBuilder, AbstractTargetBuilder
-from nuplan.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
+def main(cfg: DictConfig) -> None:
+    agent: AbstractAgent = instantiate(cfg.agent)
+    agent.initialize()
 
-from .utils.internvl_preprocess import load_image
-from .utils.lr_scheduler import WarmupCosLR
-from .utils.utils import format_number, build_from_configs
-from .recogdrive_features import ReCogDriveFeatureBuilder ,TrajectoryTargetBuilder
-from .recogdrive_backbone import RecogDriveBackbone
-from .recogdrive_diffusion_planner import (
-    ReCogDriveDiffusionPlanner,
-    ReCogDriveDiffusionPlannerConfig,
-)
+    lightning_module = AgentLightningDiT(
+        agent=agent,
+    )
+
+    train_data, val_data = build_datasets(cfg, agent)
+    train_dataloader = DataLoader(train_data, collate_fn=custom_collate_fn,  **cfg.dataloader.params, shuffle=True)
+    val_dataloader = DataLoader(val_data, collate_fn=custom_collate_fn, **cfg.dataloader.params, shuffle=False)
+
+    trainer = pl.Trainer(**cfg.trainer.params, callbacks=[pl.callbacks.ModelCheckpoint(monitor="val/loss_epoch",mode='min', save_top_k=5,every_n_epochs=1)])
+
+    trainer.fit(
+        model=lightning_module,
+        train_dataloaders=train_dataloader,
+        val_dataloaders=val_dataloader,
+    )
+
+
+
+class AgentLightningDiT(pl.LightningModule):
+    """Pytorch lightning wrapper for learnable agent."""
+
+    def __init__(self, agent: AbstractAgent):
+        """
+        Initialise the lightning module wrapper.
+        :param agent: agent interface in NAVSIM
+        """
+        super().__init__()
+        self.agent = agent
+
+    def _step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], logging_prefix: str) -> Tensor:
+        """
+        Propagates the model forward and backwards and computes/logs losses and metrics.
+        :param batch: tuple of dictionaries for feature and target tensors (batched)
+        :param logging_prefix: prefix where to log step
+        :return: scalar loss
+        """
+        features, targets, tokens_list = batch
+        prediction = self.agent.forward(features,targets,tokens_list)
+        if logging_prefix == 'train':
+            predictions = self.agent.compute_loss(features, targets, prediction)
+
+            loss = predictions.loss
+            reward = predictions.reward
+            policy_loss = predictions.policy_loss
+            bc_loss = predictions.bc_loss
+            self.log(f"{logging_prefix}/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+            self.log(f"{logging_prefix}/reward", reward, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+            self.log(f"{logging_prefix}/policy_loss", policy_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+            self.log(f"{logging_prefix}/bc_loss", bc_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        else:
+            prediction = self.agent.forward(features,targets)
+            loss = self.agent.compute_loss(features, targets, prediction)
+            self.log(f"{logging_prefix}/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        return loss
+    
+    def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        """
+        每次保存 checkpoint 时，只保留 state_dict 中不以 'agent.model' 开头的条目。
+        """
+        filtered_sd = {
+            k: v
+            for k, v in checkpoint['state_dict'].items()
+            if not k.startswith('agent.model')
+        }
+        checkpoint['state_dict'] = filtered_sd
+
+    def training_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int) -> Tensor:
+        """
+        Step called on training samples
+        :param batch: tuple of dictionaries for feature and target tensors (batched)
+        :param batch_idx: index of batch (ignored)
+        :return: scalar loss
+        """
+        #print(batch_idx)
+        return self._step(batch, "train")
+
+    def validation_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int):
+        """
+        Step called on validation samples
+        :param batch: tuple of dictionaries for feature and target tensors (batched)
+        :param batch_idx: index of batch (ignored)
+        :return: scalar loss
+        """
+        return self._step(batch, "val")
+
+    def configure_optimizers(self):
+        """Inherited, see superclass."""
+        return self.agent.get_optimizers()
+
 
 
 class ReCogDriveAgent(AbstractAgent):
@@ -268,63 +338,3 @@ class ReCogDriveAgent(AbstractAgent):
                 chars.append(chr(code_item))
             decoded_paths.append("".join(chars))
         return decoded_paths
-
-def make_recogdrive_config(
-    size: str,
-    *,
-    action_dim: int,
-    action_horizon: int,
-    input_embedding_dim: int,
-    sampling_method: str = 'ddim',
-    num_inference_steps: int = 5,
-    grpo: bool = False,
-    model_dtype: str = "float16",
-) -> ReCogDriveDiffusionPlannerConfig:
-    """
-    A factory function to create a ReCogDriveDiffusionPlannerConfig object.
-
-    This function simplifies configuration by using a size preset ("small",
-    "large", "large_new") to define the core DiT architecture, while allowing
-    other important planner settings to be specified.
-
-    Args:
-        size (str): The size preset for the DiT backbone.
-        action_dim (int): The dimension of the action space.
-        action_horizon (int): The number of future action steps to predict.
-        input_embedding_dim (int): Dimension of the input embeddings to the DiT.
-        sampling_method (str): The core training and sampling methodology.
-        num_inference_steps (int): Number of steps for inference sampling.
-        grpo (bool): If True, enables GRPO-specific logic.
-        model_dtype (str): The data type for model computations.
-
-    Returns:
-        ReCogDriveDiffusionPlannerConfig: An instantiated and configured planner config object.
-    """
-    size = size.lower()
-    if size == "small":
-        diffusion_model_cfg = {"num_heads": 8, "head_dim": 48, "num_layers": 16,"output_dim":512}
-    elif size == "large":
-        diffusion_model_cfg = {"num_heads": 32, "head_dim": 48, "num_layers": 16,"output_dim":1536}
-    else:
-        raise ValueError(f"Unknown model size: {size!r}")
-
-    common_params: Dict[str, any] = {
-        "dropout": 0.0,
-        "attention_bias": True,
-        "norm_eps": 1e-5,
-        "interleave_attention": True,
-    }
-    diffusion_model_cfg.update(common_params)
-
-    config = ReCogDriveDiffusionPlannerConfig(
-        diffusion_model_cfg=diffusion_model_cfg,
-        action_dim=action_dim,
-        action_horizon=action_horizon,
-        input_embedding_dim=input_embedding_dim,
-        sampling_method=sampling_method,
-        num_inference_steps=num_inference_steps,
-        grpo=grpo,
-        model_dtype=model_dtype,
-    )
-    
-    return config
