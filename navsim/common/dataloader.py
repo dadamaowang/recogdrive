@@ -129,15 +129,6 @@ class SceneLoader:
         """
         assert token in self.tokens
 
-        tmp = Scene.from_scene_dict_list(
-            self.scene_frames_dicts[token],
-            self._sensor_blobs_path,
-            num_history_frames=self._scene_filter.num_history_frames,
-            num_future_frames=self._scene_filter.num_future_frames,
-            sensor_config=self._sensor_config,
-            load_image_path=self.load_image_path            
-        )
-
         return Scene.from_scene_dict_list(
             self.scene_frames_dicts[token],
             self._sensor_blobs_path,

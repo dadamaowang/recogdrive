@@ -314,7 +314,7 @@ class Dataset(torch.utils.data.Dataset):
             for builder in self._target_builders:
                 targets.update(builder.compute_targets(scene))
 
-        return (features, targets)
+        return (features, targets, token)
 
 class Dataset_For_Traj(torch.utils.data.Dataset):
     def __init__(
