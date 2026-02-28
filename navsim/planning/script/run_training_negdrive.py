@@ -48,6 +48,9 @@ def custom_collate_fn(
 
     features_list, targets_list, tokens_list = zip(*batch)
 
+    print('-' * 20)
+    print("Feature keys:", features_list[0].keys())
+
     # print('features_list:')
     # print(features_list)
 

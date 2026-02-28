@@ -191,7 +191,6 @@ class AgentLightningVLMRL(pl.LightningModule):
         return loss
 
 
-
         # prediction = self.agent.forward(features,targets,tokens_list)
         # if logging_prefix == 'train':
         #     predictions = self.agent.compute_loss(features, targets, prediction)
