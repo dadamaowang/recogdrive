@@ -244,7 +244,8 @@ def main(cfg: DictConfig) -> None:
     logger.info("Building Trainer")
     trainer = pl.Trainer(
         **cfg.trainer.params,    
-        enable_checkpointing=False
+        enable_checkpointing=False,
+        # fast_dev_run=True
     )
     # logger.info("Building Trainer")
     # trainer = pl.Trainer(
