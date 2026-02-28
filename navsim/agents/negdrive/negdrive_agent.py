@@ -534,8 +534,6 @@ class NegDriveAgent(AbstractAgent):
             #                         epochs=200, 
             #                         warmup_epochs=3)
             
-        print('优化器加载成功；模型加载成功但是能不能训练待考察')
-
         return {'optimizer': optimizer, 'lr_scheduler': scheduler}
 
 

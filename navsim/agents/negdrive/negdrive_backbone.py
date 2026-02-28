@@ -69,11 +69,11 @@ class NegDriveBackbone(nn.Module):
             # （2） COVT
             self.model = AutoModel.from_pretrained(     
                 checkpoint_path,
-                torch_dtype=torch.bfloat16,
-                low_cpu_mem_usage=True,
+                torch_dtype=torch.bfloat16,     # TODO
+                low_cpu_mem_usage=True,     # TODO 
                 trust_remote_code=True,
                 use_flash_attn=True,
-                device_map=self.device
+                device_map=self.device  
             )
             self.tokenizer = AutoTokenizer.from_pretrained(
                 checkpoint_path,

@@ -165,14 +165,33 @@ class AgentLightningVLMRL(pl.LightningModule):
         super().__init__()
         self.agent = agent
 
-    def _step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], logging_prefix: str) -> Tensor:
-        # """
-        # Propagates the model forward and backwards and computes/logs losses and metrics.
-        # :param batch: tuple of dictionaries for feature and target tensors (batched)
-        # :param logging_prefix: prefix where to log step
-        # :return: scalar loss
-        # """
-        # features, targets, tokens_list = batch
+    def _step(self, 
+              batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], 
+              logging_prefix: str) -> Tensor:
+        """
+        Propagates the model forward and backwards and computes/logs losses and metrics.
+        :param batch: tuple of dictionaries for feature and target tensors (batched)
+        :param logging_prefix: prefix where to log step
+        :return: scalar loss
+        """
+        features, targets, tokens_list = batch
+
+        print('进入 _step ')
+        print('------------ features: --------------')
+        print(features)
+
+        print('------------ targets ----------------')
+        print(targets)
+
+        print('-----------  tokens_list -------------')
+        print(tokens_list)
+
+
+        loss = torch.tensor(0.0, requires_grad=True, device=self.device)
+        return loss
+
+
+
         # prediction = self.agent.forward(features,targets,tokens_list)
         # if logging_prefix == 'train':
         #     predictions = self.agent.compute_loss(features, targets, prediction)
@@ -190,7 +209,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         #     loss = self.agent.compute_loss(features, targets, prediction)
         #     self.log(f"{logging_prefix}/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
         # return loss
-        pass
+
     
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         """
@@ -203,22 +222,26 @@ class AgentLightningVLMRL(pl.LightningModule):
         }
         checkpoint['state_dict'] = filtered_sd
 
-    def training_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int) -> Tensor:
-        # """
-        # Step called on training samples
-        # :param batch: tuple of dictionaries for feature and target tensors (batched)
-        # :param batch_idx: index of batch (ignored)
-        # :return: scalar loss
-        # """
+    def training_step(self, 
+                      batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], 
+                      batch_idx: int) -> Tensor:
+        """
+        Step called on training samples
+        :param batch: tuple of dictionaries for feature and target tensors (batched)
+        :param batch_idx: index of batch (ignored)
+        :return: scalar loss
+        """
 
-        # Minimal forward pass - just return a dummy loss
-        loss = torch.tensor(0.0, requires_grad=True, device=self.device)
-        
-        self.log("train/loss", loss)
-        return loss
+        print('----    进入训练的 step    ---------')
 
-        # #print(batch_idx)
-        # return self._step(batch, "train")
+        print('----    一个 batch     ---------')
+        print(batch)
+
+        print('----    batch 的 idx     ---------')
+        print(batch_idx)
+
+    
+        return self._step(batch, "train")
         
 
     def validation_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int):
@@ -237,5 +260,4 @@ class AgentLightningVLMRL(pl.LightningModule):
 
     def configure_optimizers(self):
         print('Configure Optimizers ...')
-
         return self.agent.get_optimizers()

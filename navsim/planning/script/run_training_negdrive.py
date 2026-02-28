@@ -46,46 +46,42 @@ def custom_collate_fn(
                 ]]
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor], List[str]]:
 
-    print('------------- BATCH 内部 ----------------------')
-    print(batch)
-
-
     features_list, targets_list, tokens_list = zip(*batch)
 
-    print('features_list:')
-    print(features_list)
+    # print('features_list:')
+    # print(features_list)
 
-    print('targets_list:')
-    print(targets_list)
+    # print('targets_list:')
+    # print(targets_list)
 
-    print('tokens_list')
-    print(tokens_list)
+    # print('tokens_list')
+    # print(tokens_list)
 
     # extract features 
     history_trajectory = torch.stack([features['history_trajectory'] for features in features_list], dim=0).cpu()
-    print('history_trajectory')
-    print(history_trajectory)
+    # print('history_trajectory')
+    # print(history_trajectory)
 
     high_command_one_hot = torch.stack([features['high_command_one_hot'] for features in features_list], dim=0).cpu()
-    print('high_command_one_hot')
-    print(high_command_one_hot)
+    # print('high_command_one_hot')
+    # print(high_command_one_hot)
 
     status_feature = torch.stack([features['status_feature'] for features in features_list], dim=0).cpu()   
-    print('status_feature')
-    print(status_feature)
+    # print('status_feature')
+    # print(status_feature)
 
     last_hidden_state = rnn_utils.pad_sequence(   # pad to same length
         [features['last_hidden_state'] for features in features_list],
         batch_first=True,
         padding_value=0.0
     ).clone().detach()
-    print('last_hidden_state')
-    print(last_hidden_state)
+    # print('last_hidden_state')
+    # print(last_hidden_state)
  
     # extract targets
     trajectory = torch.stack([targets['trajectory'] for targets in targets_list], dim=0).cpu()
-    print('trajectory')
-    print(trajectory)
+    # print('trajectory')
+    # print(trajectory)
 
     features = {
         'history_trajectory': history_trajectory,
