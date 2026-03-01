@@ -176,13 +176,11 @@ class AgentLightningVLMRL(pl.LightningModule):
         """
         features, targets, tokens_list = batch
 
+        prediction = self.agent.forward(features, targets, tokens_list)
+
         loss = torch.tensor(0.0, requires_grad=True, device=self.device)
         return loss
 
-        prediction = self.agent.forward(features, targets, tokens_list)
-        
-
-        # prediction = self.agent.forward(features,targets,tokens_list)
         # if logging_prefix == 'train':
         #     predictions = self.agent.compute_loss(features, targets, prediction)
 

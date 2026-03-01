@@ -294,7 +294,7 @@ class NegDriveAgent(AbstractAgent):
         # -------------------------------------------------
         # Build VLM inputs (images + prompts)
         # -------------------------------------------------
-        history_trajectory = features["history_trajectory"].cuda()  # TODO why .CUDA
+        history_trajectory = features["history_trajectory"].cuda()  
         high_command_one_hot = features["high_command_one_hot"].cuda()
 
         if history_trajectory.ndim == 2:
@@ -308,6 +308,8 @@ class NegDriveAgent(AbstractAgent):
         else:
             if self.vlm is None:
                 raise RuntimeError("Agent is in 'no-cache' mode, but VLM backbone is not initialized.")
+            
+            # DOING 
             
             image_path_tensor = features["image_path_tensor"]
             if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
