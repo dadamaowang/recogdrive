@@ -176,20 +176,11 @@ class AgentLightningVLMRL(pl.LightningModule):
         """
         features, targets, tokens_list = batch
 
-        print('进入 _step ')
-        print('------------ features: --------------')
-        print(features)
-
-        print('------------ targets ----------------')
-        print(targets)
-
-        print('-----------  tokens_list -------------')
-        print(tokens_list)
-
-
         loss = torch.tensor(0.0, requires_grad=True, device=self.device)
         return loss
 
+        prediction = self.agent.forward(features, targets, tokens_list)
+        
 
         # prediction = self.agent.forward(features,targets,tokens_list)
         # if logging_prefix == 'train':
@@ -230,16 +221,6 @@ class AgentLightningVLMRL(pl.LightningModule):
         :param batch_idx: index of batch (ignored)
         :return: scalar loss
         """
-
-        print('----    进入训练的 step    ---------')
-
-        print('----    一个 batch     ---------')
-        print(batch)
-
-        print('----    batch 的 idx     ---------')
-        print(batch_idx)
-
-    
         return self._step(batch, "train")
         
 
