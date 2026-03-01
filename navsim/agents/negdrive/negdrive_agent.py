@@ -285,6 +285,12 @@ class NegDriveAgent(AbstractAgent):
             if isinstance(tensor, torch.Tensor):
                 features[key] = tensor.cuda()
 
+        
+        print("进入 forward , 检查模型 dtype ")
+        dtype = next(self.vlm.parameters()).type()
+        print('模型 dtype')
+        print(dtype)
+
         # -------------------------------------------------
         # Build VLM inputs (images + prompts)
         # -------------------------------------------------
