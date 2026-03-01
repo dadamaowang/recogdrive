@@ -285,11 +285,6 @@ class NegDriveAgent(AbstractAgent):
             if isinstance(tensor, torch.Tensor):
                 features[key] = tensor.cuda()
 
-        
-        print("进入 forward , 检查模型 dtype ")
-        dtype = next(self.vlm.parameters()).type()
-        print('模型 dtype')
-        print(dtype)
 
         # -------------------------------------------------
         # Build VLM inputs (images + prompts)
@@ -309,11 +304,17 @@ class NegDriveAgent(AbstractAgent):
             if self.vlm is None:
                 raise RuntimeError("Agent is in 'no-cache' mode, but VLM backbone is not initialized.")
             
-            # DOING 
-            
             image_path_tensor = features["image_path_tensor"]
             if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
             image_paths = self._decode_paths_from_tensor(image_path_tensor)
+
+
+            
+            print("进入 forward , 检查模型 dtype ")
+            dtype = next(self.vlm.parameters()).type()
+            print('模型 dtype')
+            print(dtype)
+
 
             pixel_values_list = [load_image(path) for path in image_paths]  # TODO load image
             num_patches_list = [p.shape[0] for p in pixel_values_list]

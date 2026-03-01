@@ -70,16 +70,14 @@ def custom_collate_fn(
     # print('status_feature')
     # print(status_feature)
 
-    if 'last_hidden_state' in features.keys():
-        last_hidden_state = rnn_utils.pad_sequence(   # pad to same length    # TODO 这个暂时是可能要 cache 才能用？
-            [features['last_hidden_state'] for features in features_list],
-            batch_first=True,
-            padding_value=0.0
-        ).clone().detach()
-        # print('last_hidden_state')
-        # print(last_hidden_state)
-    else:
-        last_hidden_state = None
+    # # TODO 这个训 VLM 的时候暂时不开；
+    # last_hidden_state = rnn_utils.pad_sequence(   # pad to same length   
+    #     [features['last_hidden_state'] for features in features_list],
+    #     batch_first=True,
+    #     padding_value=0.0
+    # ).clone().detach()
+    # # print('last_hidden_state')
+    # # print(last_hidden_state)
  
     # extract targets
     trajectory = torch.stack([targets['trajectory'] for targets in targets_list], dim=0).cpu()
@@ -90,7 +88,7 @@ def custom_collate_fn(
         'history_trajectory': history_trajectory,
         'high_command_one_hot': high_command_one_hot,
         'status_feature': status_feature,
-        'last_hidden_state': last_hidden_state
+        # 'last_hidden_state': last_hidden_state
     }
     targets = {
         'trajectory': trajectory
