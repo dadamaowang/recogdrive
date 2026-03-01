@@ -506,7 +506,6 @@ class NegDriveAgent(AbstractAgent):
 
     def get_optimizers(self) -> Union[Optimizer, Dict[str, LRScheduler]]:
         """for pl
-        TODO check 
         """
         optimizer_cfg = DictConfig(dict(type="AdamW", 
                                         lr=self._lr, 

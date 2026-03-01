@@ -48,9 +48,6 @@ def custom_collate_fn(
 
     features_list, targets_list, tokens_list = zip(*batch)
 
-    print('-' * 20)
-    print("Feature keys:", features_list[0].keys())
-
     # print('features_list:')
     # print(features_list)
 
@@ -73,11 +70,11 @@ def custom_collate_fn(
     # print('status_feature')
     # print(status_feature)
 
-    last_hidden_state = rnn_utils.pad_sequence(   # pad to same length
-        [features['last_hidden_state'] for features in features_list],
-        batch_first=True,
-        padding_value=0.0
-    ).clone().detach()
+    # last_hidden_state = rnn_utils.pad_sequence(   # pad to same length    # TODO 这个可能要 cache 才能用？
+    #     [features['last_hidden_state'] for features in features_list],
+    #     batch_first=True,
+    #     padding_value=0.0
+    # ).clone().detach()
     # print('last_hidden_state')
     # print(last_hidden_state)
  
@@ -90,7 +87,7 @@ def custom_collate_fn(
         'history_trajectory': history_trajectory,
         'high_command_one_hot': high_command_one_hot,
         'status_feature': status_feature,
-        'last_hidden_state': last_hidden_state,
+        # 'last_hidden_state': last_hidden_state,
     }
     targets = {
         'trajectory': trajectory
