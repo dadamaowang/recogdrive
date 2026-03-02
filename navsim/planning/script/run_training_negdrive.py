@@ -48,12 +48,6 @@ def custom_collate_fn(
 
     features_list, targets_list, tokens_list = zip(*batch)
 
-    for f in features_list:
-        print('检查 keys ')
-        print(f.keys())
-
-        break
-
     # print('features_list:')
     # print(features_list)
 
@@ -103,6 +97,11 @@ def custom_collate_fn(
     targets = {
         'trajectory': trajectory
     }
+
+
+    print('特征：')
+    print(features)
+
 
     return features, targets, tokens_list
 
