@@ -308,13 +308,11 @@ class NegDriveAgent(AbstractAgent):
             if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
             image_paths = self._decode_paths_from_tensor(image_path_tensor)
 
-            print('解码 image path')
-            print(image_paths)
-
-
             pixel_values_list = [load_image(path) for path in image_paths] 
             num_patches_list = [p.shape[0] for p in pixel_values_list]
             pixel_values_cat = torch.cat(pixel_values_list, dim=0).cuda()
+
+            print('像素值的列表')
 
             navigation_commands = ['turn left', 'go straight', 'turn right']
             command_indices = torch.argmax(high_command_one_hot, dim=-1)

@@ -98,11 +98,6 @@ def custom_collate_fn(
         'trajectory': trajectory
     }
 
-
-    print('特征：')
-    print(features)
-
-
     return features, targets, tokens_list
 
 
