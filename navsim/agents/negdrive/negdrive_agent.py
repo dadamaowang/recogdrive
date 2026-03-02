@@ -27,7 +27,7 @@ from navsim.common.dataclasses import AgentInput, SensorConfig, Trajectory
 from navsim.planning.training.abstract_feature_target_builder import AbstractFeatureBuilder, AbstractTargetBuilder
 from nuplan.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
 
-# from .utils.internvl_preprocess import load_image
+from .utils.internvl_preprocess import load_image 
 from .utils.lr_scheduler import WarmupCosLR
 from .utils.utils import format_number, build_from_configs
 
@@ -285,7 +285,7 @@ class NegDriveAgent(AbstractAgent):
             if isinstance(tensor, torch.Tensor):
                 features[key] = tensor.cuda()
 
-
+        dtype = next(self.vlm.parameters()).type()
         # -------------------------------------------------
         # Build VLM inputs (images + prompts)
         # -------------------------------------------------
@@ -308,15 +308,7 @@ class NegDriveAgent(AbstractAgent):
             if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
             image_paths = self._decode_paths_from_tensor(image_path_tensor)
 
-
-            
-            print("进入 forward , 检查模型 dtype ")
-            dtype = next(self.vlm.parameters()).type()
-            print('模型 dtype')
-            print(dtype)
-
-
-            pixel_values_list = [load_image(path) for path in image_paths]  # TODO load image
+            pixel_values_list = [load_image(path) for path in image_paths] 
             num_patches_list = [p.shape[0] for p in pixel_values_list]
             pixel_values_cat = torch.cat(pixel_values_list, dim=0).cuda()
 
@@ -327,6 +319,10 @@ class NegDriveAgent(AbstractAgent):
             questions = []
             batch_size = high_command_one_hot.shape[0]
             for i in range(batch_size):
+                            
+                print("forward , 进入 batch 内部")
+
+
                 history_trajectory_sample = history_trajectory[i]
                 command_str_sample = command_str_list[i]
 
