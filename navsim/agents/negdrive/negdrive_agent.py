@@ -304,9 +304,16 @@ class NegDriveAgent(AbstractAgent):
             if self.vlm is None:
                 raise RuntimeError("Agent is in 'no-cache' mode, but VLM backbone is not initialized.")
             
-            image_path_tensor = features["image_path_tensor"]
-            if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
-            image_paths = self._decode_paths_from_tensor(image_path_tensor)
+            # TODO 似乎直接就是像素值
+            # image_path_tensor = features["image_path_tensor"]
+            # if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
+            # image_paths = self._decode_paths_from_tensor(image_path_tensor)
+
+            image_rgb_tensors = features["image_path_tensor"]
+            if image_rgb_tensors.ndim == 1: image_rgb_tensors = image_rgb_tensors.unsqueeze(0)
+            print('像素形状，转换，')
+            print(image_rgb_tensors.shape)
+
 
             pixel_values_list = [load_image(path) for path in image_paths] 
             num_patches_list = [p.shape[0] for p in pixel_values_list]
@@ -443,6 +450,9 @@ class NegDriveAgent(AbstractAgent):
         Returns:
             List[str]: A list of decoded file path strings.
         """
+        print('路径 tensor ')
+        print(path_tensor)
+        
         decoded_paths = []
         for single_path_tensor in path_tensor:
             chars = []
