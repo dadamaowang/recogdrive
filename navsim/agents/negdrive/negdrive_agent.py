@@ -311,11 +311,11 @@ class NegDriveAgent(AbstractAgent):
 
             image_rgb_tensors = features["image_path_tensor"]
             if image_rgb_tensors.ndim == 1: image_rgb_tensors = image_rgb_tensors.unsqueeze(0)
-            print('像素形状，转换，')
-            print(image_rgb_tensors.shape)
 
+            
+            pixel_values_list = [load_image(path) for path in image_rgb_tensors]
 
-            pixel_values_list = [load_image(path) for path in image_paths] 
+            # pixel_values_list = [load_image(path) for path in image_paths] 
             num_patches_list = [p.shape[0] for p in pixel_values_list]
             pixel_values_cat = torch.cat(pixel_values_list, dim=0).cuda()
 

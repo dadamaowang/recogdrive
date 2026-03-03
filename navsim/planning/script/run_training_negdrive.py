@@ -209,6 +209,9 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         sensor_config=agent.get_sensor_config(),
     )
 
+    print('缓存路径检查')
+    print(cfg.cache_path)
+
     train_data = Dataset(
         scene_loader=train_scene_loader,
         feature_builders=agent.get_feature_builders(),

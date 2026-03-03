@@ -7,7 +7,8 @@ export OPENSCENE_DATA_ROOT="/UserData/xnq/nav_mini"
 export NUPLAN_MAPS_ROOT="$OPENSCENE_DATA_ROOT/maps"
 export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
-CACHE_PATH=$NAVSIM_EXP_ROOT/metric_cache_train  # 这里是通过 run_metric_caching_train/test 脚本搞的 metric_caching
+export CACHE_PATH=''
+
 
 TRAIN_TEST_SPLIT=navtrain   # data
 EXP_NAME=tmp_test_0211
@@ -104,7 +105,7 @@ torchrun \
     $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_negdrive.py \
     train_test_split=$TRAIN_TEST_SPLIT \
     experiment_name=$EXP_NAME \
-    cache_path=$CACHE_PATH \
+    cache_path=$CACHE_PATH
     agent=negdrive_agent \
     force_cache_computation=False \
     dataloader.params.batch_size=2 \
