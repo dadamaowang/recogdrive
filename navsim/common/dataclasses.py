@@ -23,9 +23,6 @@ from navsim.planning.simulation.planner.pdm_planner.utils.pdm_geometry_utils imp
     convert_absolute_to_relative_se2_array,
 )
 
-
-import pdb
-
 NAVSIM_INTERVAL_LENGTH: float = 0.5
 OPENSCENE_DATA_ROOT = os.environ.get("OPENSCENE_DATA_ROOT")
 NUPLAN_MAPS_ROOT = os.environ.get("NUPLAN_MAPS_ROOT")
@@ -37,6 +34,7 @@ class Camera:
 
     image: Optional[npt.NDArray[np.float32]] = None
 
+    # 激光雷达的旋转/平移（外参）和相机自身的内参/畸变参数
     sensor2lidar_rotation: Optional[npt.NDArray[np.float32]] = None
     sensor2lidar_translation: Optional[npt.NDArray[np.float32]] = None
     intrinsics: Optional[npt.NDArray[np.float32]] = None
@@ -120,7 +118,15 @@ class Lidar:
     @staticmethod
     def _load_bytes(lidar_path: Path) -> BinaryIO:
         """Helper static method to load lidar point cloud stream."""
+        # 二进制读取模式 ("rb") 打开文件
+        
         with open(lidar_path, "rb") as fp:
+            """
+            fp.read(): 一次性读取文件的全部二进制内容。
+            io.BytesIO(...): 将这些二进制内容封装成一个在内存中的二进制流对象。
+            这样做的好处是，下游的库（比如 nuPlan 的点云解析库）可以直接从这个内存流中读取数据，
+            而不需要再次操作磁盘文件，效率更高。
+            """
             return io.BytesIO(fp.read())
 
     @classmethod
@@ -134,8 +140,14 @@ class Lidar:
         """
 
         # NOTE: this could be extended to load specific LiDARs in the merged pc
+        
         if "lidar_pc" in sensor_names:
             global_lidar_path = sensor_blobs_path / lidar_path
+            """
+            LidarPointCloud.from_buffer(..., "pcd"): 调用 nuplan 库提供的 LidarPointCloud 类的 from_buffer 方法。
+                这个方法会解析内存中的二进制流（并告诉它格式是 .pcd），将其转换成一个 LidarPointCloud 对象。
+            .points: 从 LidarPointCloud 对象中，提取出最终的、我们需要的 NumPy 数组
+            """
             lidar_pc = LidarPointCloud.from_buffer(cls._load_bytes(global_lidar_path), "pcd").points
             return Lidar(lidar_pc)
         return Lidar()  # empty lidar
@@ -209,6 +221,7 @@ class AgentInput:
             ego_statuses.append(ego_status)
 
             sensor_names = sensor_config.get_sensors_at_iteration(frame_idx)
+            # sensors to load
             cameras.append(
                 Cameras.from_camera_dict(
                     sensor_blobs_path=sensor_blobs_path,
@@ -233,6 +246,24 @@ class AgentInput:
 class Annotations:
     """Dataclass of annotations (e.g. bounding boxes) per frame."""
 
+    # npt: numpy.typing -numpy的类型提示，表示这是一个numpy数组
+    """
+    boxes: npt.NDArray[np.float32]:
+    存储场景中所有物体的三维边界框（3D Bounding Boxes）。
+    这是一个 NumPy 数组，形状通常是 (N, 7)，其中 N 是物体的数量，7 代表每个物体的 (x, y, z, length, width, height, heading)。
+    names: List[str]:
+    存储每个边界框对应的类别名称。
+    这是一个字符串列表，长度为 N。例如 ['vehicle.car', 'pedestrian.adult', 'vehicle.bicycle']。
+    velocity_3d: npt.NDArray[np.float32]:
+    存储每个物体的三维速度。
+    这是一个 NumPy 数组，形状为 (N, 3)，代表每个物体的 (vx, vy, vz)。
+    instance_tokens: List[str]:
+    存储每个物体的实例ID（Instance ID）。
+    这是一个在整个数据集中都唯一的ID，用来标识一个独一无二的物体（比如，“在波士顿某条路上的这辆特定的丰田凯美瑞”）。
+    track_tokens: List[str]:
+    存储每个物体的追踪ID（Track ID）。
+    这是一个在当前场景（Scene）内唯一的ID，用来在连续的帧之间追踪同一个物体。例如，第1帧中 track_token 为 "abc" 的汽车，在第2帧中 track_token 同样为 "abc"。
+    """
     boxes: npt.NDArray[np.float32]
     names: List[str]
     velocity_3d: npt.NDArray[np.float32]
@@ -240,6 +271,7 @@ class Annotations:
     track_tokens: List[str]
 
     def __post_init__(self):
+        # vars(self) 获取当前对象的所有属性和值，返回一个字典
         annotation_lengths: Dict[str, int] = {
             attribute_name: len(attribute) for attribute_name, attribute in vars(self).items()
         }
@@ -266,7 +298,7 @@ class Trajectory:
 @dataclass
 class SceneMetadata:
     """Dataclass of scene metadata (e.g. location) per scene."""
-
+    # Metadata about the scene, such as its origin, map, and frame counts.
     log_name: str
     scene_token: str
     map_name: str
@@ -281,8 +313,8 @@ class Frame:
     """Frame dataclass with privileged information."""
 
     token: str
-    timestamp: int
-    roadblock_ids: List[str]
+    timestamp: int # represent the time of the frame
+    roadblock_ids: List[str] # List of roadblock IDs present in the frame
     traffic_lights: List[Tuple[str, bool]]
     annotations: Annotations
 
@@ -317,6 +349,7 @@ class Scene:
             global_ego_poses.append(self.frames[frame_idx].ego_status.ego_pose)
 
         local_ego_poses = convert_absolute_to_relative_se2_array(
+            # StateSE2(*global_ego_poses[0]) 代表将 global_ego_poses 中的第一个元素作为参考点
             StateSE2(*global_ego_poses[0]), np.array(global_ego_poses[1:], dtype=np.float64)
         )
 
@@ -383,9 +416,8 @@ class Scene:
     @classmethod
     def _build_map_api(cls, map_name: str) -> AbstractMap:
         """Helper classmethod to load map api from name."""
-
         assert map_name in MAP_LOCATIONS, f"The map name {map_name} is invalid, must be in {MAP_LOCATIONS}"
-        return get_maps_api(NUPLAN_MAPS_ROOT, "nuplan-maps-v1.0", map_name)    # TODO bug here
+        return get_maps_api(NUPLAN_MAPS_ROOT, "nuplan-maps-v1.0", map_name)
 
     @classmethod
     def _build_annotations(cls, scene_frame: Dict) -> Annotations:
@@ -436,8 +468,6 @@ class Scene:
         :return: scene dataclass
         """
         assert len(scene_dict_list) >= 0, "Scene list is empty!"
-
-
         scene_metadata = SceneMetadata(
             log_name=scene_dict_list[num_history_frames - 1]["log_name"],
             scene_token=scene_dict_list[num_history_frames - 1]["scene_token"],
@@ -446,7 +476,6 @@ class Scene:
             num_history_frames=num_history_frames,
             num_future_frames=num_future_frames,
         )
-
         map_api = cls._build_map_api(scene_metadata.map_name)
 
         frames: List[Frame] = []
@@ -490,8 +519,8 @@ class SceneFilter:
 
     num_history_frames: int = 4
     num_future_frames: int = 10
-    frame_interval: Optional[int] = None
-    has_route: bool = True
+    frame_interval: Optional[int] = None # interval between frames, defaults to None
+    has_route: bool = True # whether to filter scenes with no route
 
     max_scenes: Optional[int] = None
     log_names: Optional[List[str]] = None
@@ -578,6 +607,9 @@ class SensorConfig:
 class PDMResults:
     """Helper dataclass to record PDM results."""
 
+    """
+    no_at_fault_collisions: the
+    """
     no_at_fault_collisions: float
     drivable_area_compliance: float
 
@@ -587,3 +619,23 @@ class PDMResults:
     driving_direction_compliance: float
 
     score: float
+
+@dataclass
+class PDMResults_safe:
+    """Helper dataclass to record PDM results."""
+
+    """
+    no_at_fault_collisions: the
+    """
+    no_at_fault_collisions: float
+    drivable_area_compliance: float
+
+    ego_progress: float
+    time_to_collision_within_bound: float
+    comfort: float
+    driving_direction_compliance: float
+
+    score: float
+    reward_score: float
+    cost_score: float
+

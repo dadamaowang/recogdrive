@@ -173,13 +173,6 @@ class Dataset(torch.utils.data.Dataset):
         if self._cache_path is not None and not is_decoder:
             self.cache_dataset()
 
-        print('创造数据集')
-        print('cache_path:')
-        print(self._cache_path if self._cache_path is not None else 'NONE')
-        print(self._valid_cache_path if self._valid_cache_path is not None else 'NONE')
-
-
-
     @staticmethod
     def _load_valid_caches(
         cache_path: Optional[Path],
