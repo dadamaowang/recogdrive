@@ -281,11 +281,13 @@ class NegDriveAgent(AbstractAgent):
                 targets = None, 
                 tokens_list = None
                 ) -> Dict[str, torch.Tensor]:
+
         for key, tensor in features.items():
             if isinstance(tensor, torch.Tensor):
                 features[key] = tensor.cuda()
 
         dtype = next(self.vlm.parameters()).type()
+        
         # -------------------------------------------------
         # Build VLM inputs (images + prompts)
         # -------------------------------------------------
@@ -304,18 +306,11 @@ class NegDriveAgent(AbstractAgent):
             if self.vlm is None:
                 raise RuntimeError("Agent is in 'no-cache' mode, but VLM backbone is not initialized.")
             
-            # TODO 似乎直接就是像素值
-            # image_path_tensor = features["image_path_tensor"]
-            # if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
-            # image_paths = self._decode_paths_from_tensor(image_path_tensor)
+            image_path_tensor = features["image_path_tensor"]
+            if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
+            image_paths = self._decode_paths_from_tensor(image_path_tensor)
 
-            image_rgb_tensors = features["image_path_tensor"]
-            if image_rgb_tensors.ndim == 1: image_rgb_tensors = image_rgb_tensors.unsqueeze(0)
-
-            
-            pixel_values_list = [load_image(path) for path in image_rgb_tensors]
-
-            # pixel_values_list = [load_image(path) for path in image_paths] 
+            pixel_values_list = [load_image(path) for path in image_paths] 
             num_patches_list = [p.shape[0] for p in pixel_values_list]
             pixel_values_cat = torch.cat(pixel_values_list, dim=0).cuda()
 
@@ -450,9 +445,6 @@ class NegDriveAgent(AbstractAgent):
         Returns:
             List[str]: A list of decoded file path strings.
         """
-        print('路径 tensor ')
-        print(path_tensor)
-        
         decoded_paths = []
         for single_path_tensor in path_tensor:
             chars = []

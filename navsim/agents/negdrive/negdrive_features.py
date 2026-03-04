@@ -21,8 +21,10 @@ from navsim.agents.abstract_agent import AgentInput
 from navsim.planning.training.abstract_feature_target_builder import AbstractFeatureBuilder, AbstractTargetBuilder
 from navsim.common.dataclasses import Scene, Trajectory
 from nuplan.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
-# from .recogdrive_backbone import RecogDriveBackbone
-# from .utils.internvl_preprocess import load_image
+
+from .negdrive_backbone import NegDriveBackbone
+from .utils.internvl_preprocess import load_image
+
 
 def format_number(n, decimal_places=2):
     return f"{n:+.{decimal_places}f}" if abs(round(n, decimal_places)) > 1e-2 else "0.0"

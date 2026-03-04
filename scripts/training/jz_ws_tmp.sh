@@ -7,11 +7,10 @@ export OPENSCENE_DATA_ROOT="/UserData/xnq/nav_mini"
 export NUPLAN_MAPS_ROOT="$OPENSCENE_DATA_ROOT/maps"
 export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
-export CACHE_PATH=''
-
+# export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   # data
-EXP_NAME=tmp_test_0211
+EXP_NAME=tmp_test_0303
 
 
 # --------
@@ -105,7 +104,7 @@ torchrun \
     $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_negdrive.py \
     train_test_split=$TRAIN_TEST_SPLIT \
     experiment_name=$EXP_NAME \
-    cache_path=$CACHE_PATH
+    cache_path=null \
     agent=negdrive_agent \
     force_cache_computation=False \
     dataloader.params.batch_size=2 \

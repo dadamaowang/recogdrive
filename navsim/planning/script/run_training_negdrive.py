@@ -209,9 +209,6 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         sensor_config=agent.get_sensor_config(),
     )
 
-    print('缓存路径检查')
-    print(cfg.cache_path)
-
     train_data = Dataset(
         scene_loader=train_scene_loader,
         feature_builders=agent.get_feature_builders(),
@@ -256,8 +253,7 @@ def main(cfg: DictConfig) -> None:
     logger.info("Building Agent")
     agent: AbstractAgent = instantiate(cfg.agent)   # TODO 
 
-    # agent.initialize() # TODO 
-    # pdb.set_trace()
+    # agent.initialize() 
 
     logger.info("Building Lightning Module")    # TODO write Lightning module
     lightning_module = AgentLightningVLMRL(
