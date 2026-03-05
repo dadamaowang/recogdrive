@@ -200,6 +200,7 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         data_path=data_path,
         scene_filter=train_scene_filter,
         sensor_config=agent.get_sensor_config(),
+        load_image_path=True        # TODO not hard coded 
     )
 
     val_scene_loader = SceneLoader(
@@ -207,6 +208,7 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         data_path=data_path,
         scene_filter=val_scene_filter,
         sensor_config=agent.get_sensor_config(),
+        load_image_path=True
     )
 
     train_data = Dataset(

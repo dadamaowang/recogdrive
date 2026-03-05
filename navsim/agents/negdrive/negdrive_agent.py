@@ -314,8 +314,6 @@ class NegDriveAgent(AbstractAgent):
             num_patches_list = [p.shape[0] for p in pixel_values_list]
             pixel_values_cat = torch.cat(pixel_values_list, dim=0).cuda()
 
-            print('像素值的列表')
-
             navigation_commands = ['turn left', 'go straight', 'turn right']
             command_indices = torch.argmax(high_command_one_hot, dim=-1)
             command_str_list = [navigation_commands[idx.item()] for idx in command_indices]
@@ -323,10 +321,6 @@ class NegDriveAgent(AbstractAgent):
             questions = []
             batch_size = high_command_one_hot.shape[0]
             for i in range(batch_size):
-                            
-                print("forward , 进入 batch 内部")
-
-
                 history_trajectory_sample = history_trajectory[i]
                 command_str_sample = command_str_list[i]
 
@@ -336,19 +330,20 @@ class NegDriveAgent(AbstractAgent):
                     f'{format_number(history_trajectory_sample[j, 2].item())})'
                     for j in range(history_trajectory_sample.shape[0])
                 ])
-
+                                        
                 prompt = (
                     "<image>\nAs an autonomous driving system, predict the vehicle's trajectory based on:\n"
                     "1. Visual perception from front camera view\n"
                     f"2. Historical motion context (last 4 timesteps):{history_str}\n"
                     f"3. Active navigation command: [{command_str_sample.upper()}]"
-                )     # TODO prompt 是否修改
+                )     # TODO 【TOEXP】
+
                 output_requirements = (
                     "\nOutput requirements:\n- Predict 8 future trajectory points\n"
                     "- Each point format: (x:float, y:float, heading:float)\n"
                     "- Use [PT, ...] to encapsulate the trajectory\n"
                     "- Maintain numerical precision to 2 decimal places"
-                )   # TODO output requirements 是否修改
+                )   # TODO 【TOEXP】
 
                 questions.append(f"{prompt}{output_requirements}")
             
@@ -359,8 +354,10 @@ class NegDriveAgent(AbstractAgent):
                 # output_log_probs=True, # TODO for RL 
                 )  # TODO check outputs 样子
 
-            print(outputs)
-            pdb.set_trace()
+
+            print("forward , 进入 batch 内部; 看下 batch_size")
+            print(batch_size)
+            print('成功 !')
 
             last_hidden_state = outputs.hidden_states[-1]   # TODO 提取 log_probs 和 entropy 这部分
             log_probs = outputs.log_probs          # (B, T)

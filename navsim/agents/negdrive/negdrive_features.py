@@ -87,16 +87,9 @@ class NegDriveFeatureBuilder(AbstractFeatureBuilder):
         ], dim=-1)
 
         if not self.cache_hidden_state:
-            image_path = str(cameras[-1].cam_f0.image)
-
-            print('考察特征，打印图像路径检查')
-            print(image_path)
-            print('-' * 50)
-            
-            path_as_ordinals = [ord(char) for char in image_path]
-            
-            path_tensor = torch.tensor(path_as_ordinals, dtype=torch.long)
-            
+            image_path = str(cameras[-1].cam_f0.image)            
+            path_as_ordinals = [ord(char) for char in image_path]          
+            path_tensor = torch.tensor(path_as_ordinals, dtype=torch.long)            
             return {
                 "history_trajectory": history_trajectory.cpu(),
                 "high_command_one_hot": high_command_one_hot.cpu(),
@@ -104,41 +97,42 @@ class NegDriveFeatureBuilder(AbstractFeatureBuilder):
                 "image_path_tensor": path_tensor.cpu(),
             }
         else:
-            if self.backbone is None:
-                raise RuntimeError("FeatureBuilder is in online mode, but the backbone was not initialized.")
+            raise NotImplementedError  # 这个应该不需要了
+            # if self.backbone is None:
+            #     raise RuntimeError("FeatureBuilder is in online mode, but the backbone was not initialized.")
 
-            pixel_values = load_image(str(cameras[-1].cam_f0.image)).unsqueeze(0)
+            # pixel_values = load_image(str(cameras[-1].cam_f0.image)).unsqueeze(0)
 
-            pixel_values_squeezed = pixel_values.squeeze(1)
-            pixel_values_cat = torch.cat(list(pixel_values_squeezed), dim=0)
-            num_patches_list = [pv.shape[0] for pv in pixel_values_squeezed]
-            # all_loaded_images = load_image(str(cameras[-1].cam_f0.image))
+            # pixel_values_squeezed = pixel_values.squeeze(1)
+            # pixel_values_cat = torch.cat(list(pixel_values_squeezed), dim=0)
+            # num_patches_list = [pv.shape[0] for pv in pixel_values_squeezed]
+            # # all_loaded_images = load_image(str(cameras[-1].cam_f0.image))
 
-            # # b. 根据新参数进行切片，只保留少量图片（例如2张）
-            # pixel_values_cat = all_loaded_images[:2]
+            # # # b. 根据新参数进行切片，只保留少量图片（例如2张）
+            # # pixel_values_cat = all_loaded_images[:2]
 
-            # # c. 相应地更新 num_patches_list
-            # num_patches_list = [pixel_values_cat.shape[0]]
+            # # # c. 相应地更新 num_patches_list
+            # # num_patches_list = [pixel_values_cat.shape[0]]
 
 
-            navigation_commands = ['turn left', 'go straight', 'turn right', 'unknown']
+            # navigation_commands = ['turn left', 'go straight', 'turn right', 'unknown']
 
-            command_str = next((navigation_commands[i] for i, v in enumerate(high_command_one_hot) if v == 1), 'unknown')
-            history_str = " ".join([f'   - t-{3-i}: ({format_number(history_trajectory[i, 0].item())}, {format_number(history_trajectory[i, 1].item())}, {format_number(history_trajectory[i, 2].item())})' for i in range(4)])
+            # command_str = next((navigation_commands[i] for i, v in enumerate(high_command_one_hot) if v == 1), 'unknown')
+            # history_str = " ".join([f'   - t-{3-i}: ({format_number(history_trajectory[i, 0].item())}, {format_number(history_trajectory[i, 1].item())}, {format_number(history_trajectory[i, 2].item())})' for i in range(4)])
             
-            prompt = f"<image>\nAs an autonomous driving system, predict the vehicle's trajectory based on:\n1. Visual perception from front camera view\n2. Historical motion context (last 4 timesteps):{history_str}\n3. Active navigation command: [{command_str.upper()}]"
-            output_requirements = "\nOutput requirements:\n- Predict 8 future trajectory points\n- Each point format: (x:float, y:float, heading:float)\n- Use [PT, ...] to encapsulate the trajectory\n- Maintain numerical precision to 2 decimal places"
-            questions = [f"{prompt}{output_requirements}"]
+            # prompt = f"<image>\nAs an autonomous driving system, predict the vehicle's trajectory based on:\n1. Visual perception from front camera view\n2. Historical motion context (last 4 timesteps):{history_str}\n3. Active navigation command: [{command_str.upper()}]"
+            # output_requirements = "\nOutput requirements:\n- Predict 8 future trajectory points\n- Each point format: (x:float, y:float, heading:float)\n- Use [PT, ...] to encapsulate the trajectory\n- Maintain numerical precision to 2 decimal places"
+            # questions = [f"{prompt}{output_requirements}"]
 
-            outputs = self.backbone(pixel_values_cat.cuda(), questions, num_patches_list=num_patches_list)
-            last_hidden_state = outputs.hidden_states[-1]
+            # outputs = self.backbone(pixel_values_cat.cuda(), questions, num_patches_list=num_patches_list)
+            # last_hidden_state = outputs.hidden_states[-1]
 
-            return {
-                "history_trajectory": history_trajectory.cpu(),
-                "high_command_one_hot": high_command_one_hot.cpu(),
-                "last_hidden_state": last_hidden_state.squeeze(0).float().cpu(),
-                "status_feature": status_feature.cpu(),
-            }
+            # return {
+            #     "history_trajectory": history_trajectory.cpu(),
+            #     "high_command_one_hot": high_command_one_hot.cpu(),
+            #     "last_hidden_state": last_hidden_state.squeeze(0).float().cpu(),
+            #     "status_feature": status_feature.cpu(),
+            # }
 
 
 class NegDriveTrajectoryTargetBuilder(AbstractTargetBuilder):

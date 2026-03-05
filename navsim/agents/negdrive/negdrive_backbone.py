@@ -110,47 +110,59 @@ class NegDriveBackbone(nn.Module):
         self.model.img_context_token_id = self.img_context_token_id
         print("InternVL model configured.")
         
-    
-#     def forward(self, pixel_values: torch.Tensor, questions: List[str], num_patches_list: List[int]):
-#         if not self.model:
-#             raise RuntimeError("Backbone model has not been initialized. Call initialize() on the agent first.")
-            
-#         queries = []
-#         for idx, num_patches in enumerate(num_patches_list):
-#             question = questions[idx]
-#             if pixel_values is not None and '<image>' not in question:
-#                 question = '<image>\n' + question
-            
-#             template = get_conv_template("internvl2_5")
-#             template.system_message = system_message
-#             template.append_message(template.roles[0], question)
-#             template.append_message(template.roles[1], None)
-#             query = template.get_prompt()
 
-#             image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * self.num_image_token * num_patches + IMG_END_TOKEN
-#             query = query.replace('<image>', image_tokens, 1)
-#             queries.append(query)
-#         self.tokenizer.padding_side = 'left'
-#         model_inputs = self.tokenizer(queries, return_tensors='pt', padding='max_length', max_length=2800)
-#         device = torch.device('cuda')
-#         input_ids = model_inputs['input_ids'].to(device)
-#         attention_mask = model_inputs['attention_mask'].to(device)
-
-#         position_ids = attention_mask.long().cumsum(-1) - 1
-#         position_ids.masked_fill_(attention_mask == 0, 1)
+    def forward(self, 
+                pixel_values: torch.Tensor, 
+                questions: List[str], 
+                num_patches_list: List[int]
+                ):
         
-#         num_patches = pixel_values.size(0)
-#         image_flags = torch.tensor([1] * num_patches, dtype=torch.long)
+        # TODO 看看 Qwen 能不能也用这个 forward 
+        
+        if not self.model:
+            raise RuntimeError("Backbone model has not been initialized. Call initialize() on the agent first.")
+        
+
+        print('进入 vlm forward, 开始')
+        print('成功')
+        
+            
+        queries = []
+        for idx, num_patches in enumerate(num_patches_list):
+            question = questions[idx]
+            if pixel_values is not None and '<image>' not in question:
+                question = '<image>\n' + question
+            
+            template = get_conv_template("internvl2_5")
+            template.system_message = system_message
+            template.append_message(template.roles[0], question)
+            template.append_message(template.roles[1], None)
+            query = template.get_prompt()
+
+            image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * self.num_image_token * num_patches + IMG_END_TOKEN
+            query = query.replace('<image>', image_tokens, 1)
+            queries.append(query)
+        self.tokenizer.padding_side = 'left'
+        model_inputs = self.tokenizer(queries, return_tensors='pt', padding='max_length', max_length=2800)
+        device = torch.device('cuda')
+        input_ids = model_inputs['input_ids'].to(device)
+        attention_mask = model_inputs['attention_mask'].to(device)
+
+        position_ids = attention_mask.long().cumsum(-1) - 1
+        position_ids.masked_fill_(attention_mask == 0, 1)
+        
+        num_patches = pixel_values.size(0)
+        image_flags = torch.tensor([1] * num_patches, dtype=torch.long)
 
 
-#         return self.model(
-#                 pixel_values=pixel_values.bfloat16(),
-#                 input_ids=input_ids,
-#                 attention_mask=attention_mask,
-#                 position_ids=position_ids,
-#                 image_flags=image_flags.squeeze(-1),
-#                 output_hidden_states=True,
-#                 return_dict=True,
-#         )
+        return self.model(
+                pixel_values=pixel_values.bfloat16(),
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                image_flags=image_flags.squeeze(-1),
+                output_hidden_states=True,
+                return_dict=True,
+        )
 
     
