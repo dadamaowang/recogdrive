@@ -88,6 +88,10 @@ class NegDriveFeatureBuilder(AbstractFeatureBuilder):
 
         if not self.cache_hidden_state:
             image_path = str(cameras[-1].cam_f0.image)
+
+            print('考察特征，打印图像路径检查')
+            print(image_path)
+            print('-' * 50)
             
             path_as_ordinals = [ord(char) for char in image_path]
             
