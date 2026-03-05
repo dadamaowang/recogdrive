@@ -17,13 +17,14 @@ from torch import nn
 from transformers import AutoModel, AutoTokenizer
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-# from .utils.conversation import get_conv_template
+from .utils.conversation import get_conv_template
 
 IMG_CONTEXT_TOKEN = '<IMG_CONTEXT>'
 IMG_START_TOKEN = '<img>'
 IMG_END_TOKEN = '</img>'
 
-system_message = """
+
+system_message = """    
 You are a vehicle trajectory prediction model for autonomous driving. Your task is to predict the ego vehicle's 4-second trajectory based on the following inputs: multi-view images from 8 cameras, ego vehicle states (position), and discrete navigation commands. The input provides a 2-second history, and your output should ensure a safe trajectory for the next 4 seconds. Your predictions must adhere to the following metrics:
 1. **No at-fault Collisions (NC)**: Avoid collisions with other objects/vehicles.
 2. **Drivable Area Compliance (DAC)**: Stay within the drivable area.
@@ -34,6 +35,8 @@ You are a vehicle trajectory prediction model for autonomous driving. Your task 
 For evaluation, use the **PDM Score**, which combines these metrics: **PDM Score** = NC * DAC * (5*TTC + 5*EP + 2*C + 0*DDC) / 12.
 Your predictions will be evaluated through a non-reactive 4-second simulation with an LQR controller and background actors following their recorded trajectories. The better your predictions, the higher your score.
 """
+# TODO 这个 system prompt 有空也得改下
+
 
 
 class NegDriveBackbone(nn.Module):
@@ -122,11 +125,6 @@ class NegDriveBackbone(nn.Module):
         if not self.model:
             raise RuntimeError("Backbone model has not been initialized. Call initialize() on the agent first.")
         
-
-        print('进入 vlm forward, 开始')
-        print('成功')
-        
-            
         queries = []
         for idx, num_patches in enumerate(num_patches_list):
             question = questions[idx]
@@ -138,6 +136,12 @@ class NegDriveBackbone(nn.Module):
             template.append_message(template.roles[0], question)
             template.append_message(template.roles[1], None)
             query = template.get_prompt()
+
+
+            print('检查 Query ')
+            print(query)
+            print('成功')
+
 
             image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * self.num_image_token * num_patches + IMG_END_TOKEN
             query = query.replace('<image>', image_tokens, 1)
