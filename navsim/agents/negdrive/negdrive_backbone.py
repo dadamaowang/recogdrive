@@ -6,8 +6,8 @@
 @Version :   0.0.1
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   DOING
-@Desc    :   None
+@Status  :   正在考察 forward 和后续模型训练联动
+@Desc    :   重要
 '''
 
 
@@ -137,15 +137,10 @@ class NegDriveBackbone(nn.Module):
             template.append_message(template.roles[1], None)
             query = template.get_prompt()
 
-
-            print('检查 Query ')
-            print(query)
-            print('成功')
-
-
             image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * self.num_image_token * num_patches + IMG_END_TOKEN
             query = query.replace('<image>', image_tokens, 1)
             queries.append(query)
+
         self.tokenizer.padding_side = 'left'
         model_inputs = self.tokenizer(queries, return_tensors='pt', padding='max_length', max_length=2800)
         device = torch.device('cuda')
@@ -157,7 +152,6 @@ class NegDriveBackbone(nn.Module):
         
         num_patches = pixel_values.size(0)
         image_flags = torch.tensor([1] * num_patches, dtype=torch.long)
-
 
         return self.model(
                 pixel_values=pixel_values.bfloat16(),
