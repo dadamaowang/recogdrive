@@ -10,7 +10,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   # data
-EXP_NAME=tmp_test_0303
+EXP_NAME=test_0306
 
 
 # --------
@@ -84,7 +84,7 @@ export TORCHELASTIC_ERROR_FILE=tmp_error.json
 export MASTER_PORT=63669
 export PORT=63665
 export GPUS=2
-export GPUS_PER_NODE=2
+export GPUS_PER_NODE=$GPUS
 
 MASTER_PORT=${MASTER_PORT:-63669}
 PORT=${PORT:-63665}
@@ -95,7 +95,7 @@ export MASTER_PORT=${MASTER_PORT}
 export PORT=${PORT}
 
 echo "GPUS: ${GPUS}"
-export CUDA_LAUNCH_BLOCKING=1
+# export CUDA_LAUNCH_BLOCKING=1 This is only for debugging and should not set when training 
 
 
 torchrun \
@@ -107,7 +107,7 @@ torchrun \
     cache_path=null \
     agent=negdrive_agent \
     force_cache_computation=False \
-    dataloader.params.batch_size=2 \
+    dataloader.params.batch_size=1 \
     trainer.params.max_epochs=4 \
     trainer.params.strategy="ddp_find_unused_parameters_true" \
     trainer.params.devices=2 \

@@ -347,12 +347,13 @@ class NegDriveAgent(AbstractAgent):
 
                 questions.append(f"{prompt}{output_requirements}")
             
-            outputs = self.vlm(
-                pixel_values_cat, 
-                questions, 
-                num_patches_list=num_patches_list,
-                # output_log_probs=True, # TODO for RL 
-                )  # TODO check outputs 样子
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                outputs = self.vlm(
+                    pixel_values_cat, 
+                    questions, 
+                    num_patches_list=num_patches_list,
+                    # output_log_probs=True, # TODO for RL 
+                    )  # TODO check outputs 样子
             
             print('检查模型输出')
             print(outputs)

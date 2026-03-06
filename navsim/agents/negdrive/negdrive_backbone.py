@@ -72,7 +72,7 @@ class NegDriveBackbone(nn.Module):
             # （2） COVT
             self.model = AutoModel.from_pretrained(     
                 checkpoint_path,
-                torch_dtype=torch.bfloat16,     # TODO
+                torch_dtype="auto",     
                 low_cpu_mem_usage=True,     # TODO 
                 trust_remote_code=True,
                 use_flash_attn=True,
@@ -102,6 +102,9 @@ class NegDriveBackbone(nn.Module):
             # )
         else:
             raise ValueError(f"Unsupported model_type: '{self.model_type}'. Please choose 'internvl' or 'qwen'.")
+
+        
+        self.model.gradient_checkpointing_enable()  # TODO 
 
         print(f"Backbone '{self.model_type}' loaded successfully on device '{self.device}'.")
 
@@ -154,7 +157,8 @@ class NegDriveBackbone(nn.Module):
         image_flags = torch.tensor([1] * num_patches, dtype=torch.long)
 
         return self.model(
-                pixel_values=pixel_values.bfloat16(),
+                # pixel_values=pixel_values.bfloat16(),  # 原始 code 是这样的 
+                pixel_values=pixel_values,
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
@@ -163,4 +167,4 @@ class NegDriveBackbone(nn.Module):
                 return_dict=True,
         )
 
-    
+
