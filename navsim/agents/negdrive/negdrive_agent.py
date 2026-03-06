@@ -353,15 +353,19 @@ class NegDriveAgent(AbstractAgent):
                 num_patches_list=num_patches_list,
                 # output_log_probs=True, # TODO for RL 
                 )  # TODO check outputs 样子
+            
+            print('检查模型输出')
+            print(outputs)
+            print('成功')
 
 
             # print("forward , 进入 batch 内部; 看下 batch_size")
             # print(batch_size)
             # print('成功 !')
 
-            last_hidden_state = outputs.hidden_states[-1]   # TODO 提取 log_probs 和 entropy 这部分
-            log_probs = outputs.log_probs          # (B, T)
-            entropy = outputs.entropy              # (B,)
+            # last_hidden_state = outputs.hidden_states[-1]   # TODO 提取 log_probs 和 entropy 这部分
+            # log_probs = outputs.log_probs          # (B, T)
+            # entropy = outputs.entropy              # (B,)
 
         status_feature = features["status_feature"].cuda()
         if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
