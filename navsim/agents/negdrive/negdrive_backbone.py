@@ -14,6 +14,8 @@
 from typing import List, Optional, Tuple, Union
 import torch
 from torch import nn
+from dataclasses import dataclass
+
 from transformers import AutoModel, AutoTokenizer
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
@@ -37,6 +39,17 @@ Your predictions will be evaluated through a non-reactive 4-second simulation wi
 """
 # TODO 这个 system prompt 有空也得改下
 
+
+@dataclass  # NOTE 记得 dataclass dec
+class NegDriveBackboneOutput:  
+    """
+    Output For Backbone RLVR training
+    """
+
+    logits: torch.Tensor    # [B, SeqLen, VocabSize] 
+    hidden_states: tuple    #  tuple of [B, SeqLen, HiddenDim]
+    input_ids: torch.Tensor     # [B, SeqLen]
+    attention_mask: torch.Tensor    # [B, SeqLen]
 
 
 class NegDriveBackbone(nn.Module):
@@ -145,7 +158,7 @@ class NegDriveBackbone(nn.Module):
             queries.append(query)
 
         self.tokenizer.padding_side = 'left'
-        model_inputs = self.tokenizer(queries, return_tensors='pt', padding='max_length', max_length=2800)
+        model_inputs = self.tokenizer(queries, return_tensors='pt', padding='max_length', max_length=2800)  # TODO change max length
         device = torch.device('cuda')
         input_ids = model_inputs['input_ids'].to(device)
         attention_mask = model_inputs['attention_mask'].to(device)
@@ -156,8 +169,18 @@ class NegDriveBackbone(nn.Module):
         num_patches = pixel_values.size(0)
         image_flags = torch.tensor([1] * num_patches, dtype=torch.long)
 
-        return self.model(
-                # pixel_values=pixel_values.bfloat16(),  # 原始 code 是这样的 
+        # return self.model(
+        #         # pixel_values=pixel_values.bfloat16(),  # 原始 code 是这样的 
+        #         pixel_values=pixel_values,
+        #         input_ids=input_ids,
+        #         attention_mask=attention_mask,
+        #         position_ids=position_ids,
+        #         image_flags=image_flags.squeeze(-1),
+        #         output_hidden_states=True,
+        #         return_dict=True,
+        # )
+
+        model_outputs = self.model(
                 pixel_values=pixel_values,
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -166,5 +189,46 @@ class NegDriveBackbone(nn.Module):
                 output_hidden_states=True,
                 return_dict=True,
         )
+        """
+        NOTE output class here
+        @dataclass
+        class CausalLMOutputWithPast(ModelOutput):
+            loss: Optional[torch.FloatTensor] = None
+
+            logits: torch.FloatTensor = None
+                (batch_size, sequence_length, config.vocab_size)
+                Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax)
+
+            past_key_values: Optional[List[torch.FloatTensor]] = None(?)
+
+            hidden_states: Optional[Tuple[torch.FloatTensor]] = None (?)
+                returned when ``output_hidden_states=True``
+                Hidden-states of the model at the output of each layer plus the initial embedding outputs.
+
+            attentions: Optional[Tuple[torch.FloatTensor]] = None (?)
+        """
+
+
+        return NegDriveBackboneOutput(
+            logits=model_outputs.logits,
+            hidden_states=model_outputs.hidden_states,
+            input_ids=input_ids,
+            attention_mask=attention_mask
+        )
+
+
+    def _extrace_logprobs_from_logits(
+            self,
+            logits: torch.Tensor,
+            input_ids: torch.Tensor,
+            attention_mask: torch.Tensor,
+            resp_start_idx: Optional[int] = None,
+        ) -> torch.Tensor:
+        """
+        Extract per-token log prob of generated tokens. (to compute loss for RL training)
+
+        """
+
+
 
 

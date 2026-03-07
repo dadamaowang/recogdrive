@@ -107,9 +107,6 @@ class NegDriveAgent(AbstractAgent):
             checkpoint_path=self.vlm_path,
             device=self.device,
         )
-        # for p in self.vlm.parameters():
-        #     p.requires_grad = train_vlm
-
         
         # # -----------------------
         # # Diffusion planner (frozen)
@@ -179,18 +176,7 @@ class NegDriveAgent(AbstractAgent):
         - Diffusion checkpoint → frozen decoder
         - GRPO reference policy → loaded separately
         """
-        # -------------------------
-        # 1. Load VLM (policy)
-        # -------------------------
-        if self.vlm_path is not None:
-            vlm_ckpt = torch.load(self.vlm_path, map_location="cpu")
-            if "state_dict" in vlm_ckpt:
-                vlm_ckpt = vlm_ckpt["state_dict"]
-
-            missing, unexpected = self.vlm.load_state_dict(
-                vlm_ckpt, strict=False
-            )
-
+        pass
         # if self.checkpoint_path:
         #     ckpt = torch.load(self.checkpoint_path, map_location="cpu")["state_dict"]
         #     model_dict = self.state_dict()
@@ -202,67 +188,13 @@ class NegDriveAgent(AbstractAgent):
         #     self.load_state_dict(filtered_ckpt, strict=False)
 
 
-    # def initialize(self) -> None: 
-    #     """
-    #     Initialize agent components from checkpoints.
-
-    #     Semantics:
-    #     - VLM checkpoint → trainable policy
-    #     - Diffusion checkpoint → frozen decoder
-    #     - GRPO reference policy → loaded separately
-    #     """
-
-    #     # -------------------------
-    #     # 1. Load VLM (policy)
-    #     # -------------------------
-    #     if self.vlm_path is not None:
-    #         vlm_ckpt = torch.load(self.vlm_path, map_location="cpu")
-
-    #         if "state_dict" in vlm_ckpt:
-    #             vlm_ckpt = vlm_ckpt["state_dict"]
-
-    #         missing, unexpected = self.backbone.load_state_dict(
-    #             vlm_ckpt, strict=False
-    #         )
-
-    #         if len(unexpected) > 0:
-    #             print(f"[VLM] Unexpected keys: {unexpected}")
-    #         if len(missing) > 0:
-    #             print(f"[VLM] Missing keys: {missing}")
-
-    #     # -------------------------
-    #     # 2. Load diffusion planner (frozen)
-    #     # -------------------------
-    #     if self.checkpoint_path is not None:
-    #         planner_ckpt = torch.load(self.checkpoint_path, map_location="cpu")
-
-    #         if "state_dict" in planner_ckpt:
-    #             planner_ckpt = planner_ckpt["state_dict"]
-
-    #         planner_sd = {
-    #             k.replace("agent.action_head.", ""): v
-    #             for k, v in planner_ckpt.items()
-    #             if k.startswith("agent.action_head.")
-    #         }
-
-    #         self.action_head.load_state_dict(planner_sd, strict=True)
-
-    #         # enforce freezing (important!)
-    #         for p in self.action_head.parameters():
-    #             p.requires_grad = False
-
-    #     # -------------------------
-    #     # 3. Load GRPO reference policy (optional)
-    #     # -------------------------
-    #     if self.use_grpo and self.reference_policy_checkpoint:
-    #         self._load_reference_policy(self.reference_policy_checkpoint)
-
-
     def get_sensor_config(self) -> SensorConfig:
         return SensorConfig.build_all_sensors(include=[0, 1, 2, 3])
 
+
     def get_target_builders(self) -> List[AbstractTargetBuilder]:
         return [NegDriveTrajectoryTargetBuilder(trajectory_sampling=self._trajectory_sampling)]
+
 
     def get_feature_builders(self) -> List[AbstractFeatureBuilder]:
         return [NegDriveFeatureBuilder(   
@@ -352,8 +284,8 @@ class NegDriveAgent(AbstractAgent):
                     pixel_values_cat, 
                     questions, 
                     num_patches_list=num_patches_list,
-                    # output_log_probs=True, # TODO for RL 
-                    )  # TODO check outputs 样子
+                    )
+                
             
             print('检查模型输出')
             print(outputs)
