@@ -286,15 +286,13 @@ class NegDriveAgent(AbstractAgent):
                     num_patches_list=num_patches_list,
                     )
                 
+            # get log prob
+            log_probs = self.vlm.extract_logprobs_from_outputs(outputs)
             
-            print('检查模型输出')
-            print(outputs)
-            print('成功')
+            # print('检查模型输出')
+            # print(outputs)
+            # print('成功')
 
-
-            # print("forward , 进入 batch 内部; 看下 batch_size")
-            # print(batch_size)
-            # print('成功 !')
 
             # last_hidden_state = outputs.hidden_states[-1]   # TODO 提取 log_probs 和 entropy 这部分
             # log_probs = outputs.log_probs          # (B, T)

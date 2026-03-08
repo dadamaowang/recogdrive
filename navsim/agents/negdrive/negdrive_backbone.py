@@ -14,6 +14,7 @@
 from typing import List, Optional, Tuple, Union
 import torch
 from torch import nn
+import torch.nn.functional as F
 from dataclasses import dataclass
 
 from transformers import AutoModel, AutoTokenizer
@@ -217,17 +218,32 @@ class NegDriveBackbone(nn.Module):
         )
 
 
-    def _extrace_logprobs_from_logits(
+    def extract_logprobs_from_outputs(
             self,
-            logits: torch.Tensor,
-            input_ids: torch.Tensor,
-            attention_mask: torch.Tensor,
+            outputs: NegDriveBackboneOutput,
             resp_start_idx: Optional[int] = None,
         ) -> torch.Tensor:
         """
         Extract per-token log prob of generated tokens. (to compute loss for RL training)
 
         """
+
+        logits = outputs.logits     # torch.Size([B, 2800(seq_len), 151682])
+
+        
+
+    
+ 
+
+
+        
+
+
+
+
+        return outputs
+
+
 
 
 
