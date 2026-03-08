@@ -226,25 +226,53 @@ class NegDriveBackbone(nn.Module):
         """
         Extract per-token log prob of generated tokens. (to compute loss for RL training)
 
+        当使用的 VLM 添加了 head, 使用这种方式
+
         """
 
         logits = outputs.logits     # torch.Size([B, 2800(seq_len), 151682])
 
         
 
-    
- 
-
-
-        
-
-
-
-
         return outputs
 
 
 
+    def compute_gaussian_logprob(
+            self,
+            outputs: NegDriveBackboneOutput,
+        ):
+        # DOING
 
+
+
+# def compute_gaussian_logprob(
+#     policy_h: torch.Tensor,         # [B, HiddenDim] from trainable VLM
+#     ref_h: torch.Tensor,            # [B, HiddenDim] from frozen reference VLM
+#     log_std: float = 0.0,           # log of std dev (learnable or fixed)
+# ) -> torch.Tensor:
+#     """
+#     Compute log π(h | s) treating the reference hidden state as the mean
+#     of a Gaussian, and policy hidden state as the sample.
+
+#     log π(h_policy | s) = -0.5 * ||h_policy - h_ref||^2 / σ^2  + const
+
+#     This gives a differentiable scalar per batch item that:
+#     - Is HIGH when policy hidden state is close to reference (safe)
+#     - Is LOW when policy drifts far from reference (penalized by KL)
+
+#     Args:
+#         policy_h: Hidden state from trainable VLM. [B, HiddenDim]
+#         ref_h:    Hidden state from frozen reference VLM. [B, HiddenDim]
+#         log_std:  Log standard deviation (scalar).
+
+#     Returns:
+#         log_probs: [B]
+#     """
+#     std = torch.exp(torch.tensor(log_std, device=policy_h.device))
+#     # Gaussian log prob (ignoring constant term)
+#     diff = policy_h - ref_h.detach()                      # [B, HiddenDim]
+#     log_probs = -0.5 * (diff / std).pow(2).mean(dim=-1)   # [B]
+#     return log_probs
 
 
