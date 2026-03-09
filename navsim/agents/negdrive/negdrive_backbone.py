@@ -242,11 +242,6 @@ class NegDriveBackbone(nn.Module):
         )
 
 
-    #     policy_h = self.pool_hidden_state(hidden_states=policy_output.hidden_states,
-    #                                       atten_masks=policy_output.attention_mask)
-
-
-
         # # Pool both hidden states → [B, HiddenDim]
         # policy_h = pool_hidden_state(policy_output.hidden_states, policy_output.attention_mask, pool)
         # ref_h    = pool_hidden_state(ref_output.hidden_states,    ref_output.attention_mask,    pool)
@@ -309,19 +304,21 @@ class NegDriveBackbone(nn.Module):
 
             standard causal LMs's last token has attented to all previous tokens, thus it is the most info-rich position
             """
-            last_idx = atten_masks.sum(dim=-1) - 1
+            last_idx = atten_masks.sum(dim=-1) - 1      # TODO 这个为什么每次不一样
             last_idx = last_idx.clamp(min=0).long()    
             # (1) safety guard (could produce -1)
             # (2) Tensor indexing in PyTorch requires integer (Long) dtype.
 
-            print(f'末尾idx: {last_idx}')
-             
+            h = last_layer[
+                torch.arange(B, device=last_layer.device),
+                last_idx,
+            ]   # torch.Size([1, 1536]) [B, HiddenDim]
+        elif pool_strategy == "mean":
+
+            # DOING
 
 
 
-        
-#     last_layer = hidden_states[-1]              # [B, S, HiddenDim]
-#     B, S, D = last_layer.shape
 
 #     if pool == "last_non_pad":
 #         # Sum of attention mask = index of last real token + 1
