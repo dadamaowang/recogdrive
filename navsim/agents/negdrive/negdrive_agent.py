@@ -286,8 +286,9 @@ class NegDriveAgent(AbstractAgent):
                     num_patches_list=num_patches_list,
                     )
                 
-            # get log prob
-            log_probs = self.vlm.extract_logprobs_from_outputs(outputs)
+            # TODO add option
+            # get gaussian log prob
+            log_probs = self.vlm.compute_gaussian_logprob(policy_output=outputs)
             
             # print('检查模型输出')
             # print(outputs)

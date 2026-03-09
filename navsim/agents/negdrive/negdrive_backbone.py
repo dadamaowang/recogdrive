@@ -11,7 +11,7 @@
 '''
 
 
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Literal
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -159,7 +159,13 @@ class NegDriveBackbone(nn.Module):
             queries.append(query)
 
         self.tokenizer.padding_side = 'left'
-        model_inputs = self.tokenizer(queries, return_tensors='pt', padding='max_length', max_length=2800)  # TODO change max length
+
+        model_inputs = self.tokenizer(queries, 
+                                      return_tensors='pt', 
+                                      padding='max_length', 
+                                      max_length=2800
+                                      )  # TODO change max length
+
         device = torch.device('cuda')
         input_ids = model_inputs['input_ids'].to(device)
         attention_mask = model_inputs['attention_mask'].to(device)
@@ -190,6 +196,8 @@ class NegDriveBackbone(nn.Module):
                 output_hidden_states=True,
                 return_dict=True,
         )
+
+
         """
         NOTE output class here
         @dataclass
@@ -208,71 +216,150 @@ class NegDriveBackbone(nn.Module):
 
             attentions: Optional[Tuple[torch.FloatTensor]] = None (?)
         """
-
-
         return NegDriveBackboneOutput(
             logits=model_outputs.logits,
             hidden_states=model_outputs.hidden_states,
             input_ids=input_ids,
             attention_mask=attention_mask
         )
-
-
-    def extract_logprobs_from_outputs(
-            self,
-            outputs: NegDriveBackboneOutput,
-            resp_start_idx: Optional[int] = None,
-        ) -> torch.Tensor:
-        """
-        Extract per-token log prob of generated tokens. (to compute loss for RL training)
-
-        当使用的 VLM 添加了 head, 使用这种方式
-
-        """
-
-        logits = outputs.logits     # torch.Size([B, 2800(seq_len), 151682])
-
-        
-
-        return outputs
-
-
+    
 
     def compute_gaussian_logprob(
             self,
-            outputs: NegDriveBackboneOutput,
-        ):
-        # DOING
+            policy_output, # NegDriveBackboneOutput,
+            ref_output = None, # NegDriveBackboneOutupt
+            log_std: float = 0.0,
+            pool_strategy: str = "last_non_pad"
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        This is for GRPO reward computation when VLM act as cognitive backbone
+
+        """
+
+        policy_h = self.pool_hidden_state(
+            hidden_states = policy_output.hidden_states,
+            atten_masks = policy_output.attention_mask
+        )
+
+
+    #     policy_h = self.pool_hidden_state(hidden_states=policy_output.hidden_states,
+    #                                       atten_masks=policy_output.attention_mask)
 
 
 
-# def compute_gaussian_logprob(
-#     policy_h: torch.Tensor,         # [B, HiddenDim] from trainable VLM
-#     ref_h: torch.Tensor,            # [B, HiddenDim] from frozen reference VLM
-#     log_std: float = 0.0,           # log of std dev (learnable or fixed)
-# ) -> torch.Tensor:
-#     """
-#     Compute log π(h | s) treating the reference hidden state as the mean
-#     of a Gaussian, and policy hidden state as the sample.
+        # # Pool both hidden states → [B, HiddenDim]
+        # policy_h = pool_hidden_state(policy_output.hidden_states, policy_output.attention_mask, pool)
+        # ref_h    = pool_hidden_state(ref_output.hidden_states,    ref_output.attention_mask,    pool)
 
-#     log π(h_policy | s) = -0.5 * ||h_policy - h_ref||^2 / σ^2  + const
+        # # ref_h must NOT contribute gradients — it's the fixed Gaussian mean
+        # ref_h = ref_h.detach()                              # [B, HiddenDim]
 
-#     This gives a differentiable scalar per batch item that:
-#     - Is HIGH when policy hidden state is close to reference (safe)
-#     - Is LOW when policy drifts far from reference (penalized by KL)
+        # # Gaussian log prob (per hidden dimension, then summed)
+        # sigma_sq = torch.exp(
+        #     2 * torch.tensor(log_std, dtype=policy_h.dtype, device=policy_h.device)
+        # )  # scalar: σ²
 
-#     Args:
-#         policy_h: Hidden state from trainable VLM. [B, HiddenDim]
-#         ref_h:    Hidden state from frozen reference VLM. [B, HiddenDim]
-#         log_std:  Log standard deviation (scalar).
+        # diff         = policy_h - ref_h                     # [B, HiddenDim]
+        # log_probs    = -0.5 * (diff.pow(2) / sigma_sq).sum(dim=-1)  # [B]
 
-#     Returns:
-#         log_probs: [B]
-#     """
-#     std = torch.exp(torch.tensor(log_std, device=policy_h.device))
-#     # Gaussian log prob (ignoring constant term)
-#     diff = policy_h - ref_h.detach()                      # [B, HiddenDim]
-#     log_probs = -0.5 * (diff / std).pow(2).mean(dim=-1)   # [B]
-#     return log_probs
+        # return log_probs, policy_h  # both returned — policy_h reused by diffusion planner
 
 
+
+    def pool_hidden_state(self,
+                          hidden_states: torch.Tensor,
+                          atten_masks: torch.Tensor,    # [B, S], 1=real token, 0=padding.
+                          pool_strategy: Literal["last_non_pad", "mean"] = "last_non_pad", 
+                          ) -> torch.Tensor:
+        """
+        NOTE 
+        for GRPO, we need **one vector per batch item** to compute reward.
+        In this case, we got outputs.hidden_state [B, SeqLen, HiddenDim], 
+        which has SeqLen vectors and we only need one (or, dim is one)
+        e.g., we can pick the last one, or we compute mean, etc.
+
+        TODO: 选择的策略？可调研
+
+        pool_strategy:
+            - last_non_pad : 
+            - mean: 
+
+        Args:
+            pool_strategy:
+                last_non_pad: last real token (best for causal LM) TODO
+                mean: mean over all real tokens
+                ...
+        
+        Returns:
+            h: [B, HiddenDim]
+            
+        """
+
+        last_layer = hidden_states[-1]
+        B, S, D = last_layer.shape
+
+        if pool_strategy == "last_non_pad":
+            """
+            NOTE 
+            attention_mask tells you which tokens are real (1) vs padding (0)
+            [1, 1, 1, 1, 1, 1, 0, 0, 0]
+            ↑ real tokens ↑  ↑ padding ↑
+
+            sum can tell the last real token's idx
+
+            standard causal LMs's last token has attented to all previous tokens, thus it is the most info-rich position
+            """
+            last_idx = atten_masks.sum(dim=-1) - 1
+            last_idx = last_idx.clamp(min=0).long()    
+            # (1) safety guard (could produce -1)
+            # (2) Tensor indexing in PyTorch requires integer (Long) dtype.
+
+            print(f'末尾idx: {last_idx}')
+             
+
+
+
+        
+#     last_layer = hidden_states[-1]              # [B, S, HiddenDim]
+#     B, S, D = last_layer.shape
+
+#     if pool == "last_non_pad":
+#         # Sum of attention mask = index of last real token + 1
+#         last_idx = attention_mask.sum(dim=-1) - 1       # [B]
+#         last_idx = last_idx.clamp(min=0).long()
+
+#         h = last_layer[
+#             torch.arange(B, device=last_layer.device),
+#             last_idx,
+#         ]  # [B, HiddenDim]
+
+#     elif pool == "mean":
+#         mask = attention_mask.unsqueeze(-1).float()     # [B, S, 1]
+#         h = (last_layer * mask).sum(dim=1)              # [B, HiddenDim]
+#         h = h / mask.sum(dim=1).clamp(min=1)            # [B, HiddenDim]
+
+#     else:
+#         raise ValueError(f"Unknown pool strategy: '{pool}'")
+
+#     return h  # [B, HiddenDim]
+
+
+
+
+
+    # def extract_logprobs_from_outputs(
+    #         self,
+    #         outputs: NegDriveBackboneOutput,
+    #         resp_start_idx: Optional[int] = None,
+    #     ) -> torch.Tensor:
+    #     """
+    #     Extract per-token log prob of generated tokens. (to compute loss for RL training)
+
+    #     TODO
+    #     当使用的 VLM 添加了 head, 使用这种方式
+
+    #     """
+        
+    #     logits = outputs.logits     # torch.Size([B, 2800(seq_len), 151682])
+
+    #     return outputs
