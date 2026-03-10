@@ -232,7 +232,7 @@ class NegDriveBackbone(nn.Module):
             pool_strategy: str = "last_non_pad"
         ) -> tuple[torch.Tensor, torch.Tensor]:
         """
-        This is for GRPO reward computation when VLM act as cognitive backbone
+        For GRPO reward computation when VLM act as cognitive backbone
 
         """
 
@@ -241,24 +241,33 @@ class NegDriveBackbone(nn.Module):
             atten_masks = policy_output.attention_mask
         )
 
-
+        # TODO 处理 ref_h 
         # # Pool both hidden states → [B, HiddenDim]
         # policy_h = pool_hidden_state(policy_output.hidden_states, policy_output.attention_mask, pool)
         # ref_h    = pool_hidden_state(ref_output.hidden_states,    ref_output.attention_mask,    pool)
 
         # # ref_h must NOT contribute gradients — it's the fixed Gaussian mean
-        # ref_h = ref_h.detach()                              # [B, HiddenDim]
+        # ref_h = ref_h.detach()        
 
-        # # Gaussian log prob (per hidden dimension, then summed)
-        # sigma_sq = torch.exp(
-        #     2 * torch.tensor(log_std, dtype=policy_h.dtype, device=policy_h.device)
-        # )  # scalar: σ²
+        # scalar: σ²
+        sigma_sq = torch.exp(
+            2 * torch.tensor(log_std, dtype=policy_h.dtype, device=policy_h.device)
+        )   # TODO
+        """
+        Concrete Numbers
 
+        log_std = 0.0   →  σ=1.0,  σ²=1.0   (default, balanced)
+        log_std = 1.0   →  σ=2.72, σ²=7.39  (wide, tolerant of drift)
+        log_std = -1.0  →  σ=0.37, σ²=0.14  (tight, penalizes drift heavily)
+        
+        """
+        log_probs = -0.5 * (policy_h.pow(2) / sigma_sq).sum(dim=-1)    # TODO
+
+        # TODO ref_h 的
         # diff         = policy_h - ref_h                     # [B, HiddenDim]
         # log_probs    = -0.5 * (diff.pow(2) / sigma_sq).sum(dim=-1)  # [B]
 
-        # return log_probs, policy_h  # both returned — policy_h reused by diffusion planner
-
+        return log_probs, policy_h  # both returned — policy_h reused by diffusion planner
 
 
     def pool_hidden_state(self,
@@ -313,34 +322,18 @@ class NegDriveBackbone(nn.Module):
                 torch.arange(B, device=last_layer.device),
                 last_idx,
             ]   # torch.Size([1, 1536]) [B, HiddenDim]
+
         elif pool_strategy == "mean":
+            raise NotImplementedError
 
-            # DOING
+    #     elif pool == "mean":
+    #         mask = attention_mask.unsqueeze(-1).float()     # [B, S, 1]
+    #         h = (last_layer * mask).sum(dim=1)              # [B, HiddenDim]
+    #         h = h / mask.sum(dim=1).clamp(min=1)            # [B, HiddenDim]
 
-
-
-
-#     if pool == "last_non_pad":
-#         # Sum of attention mask = index of last real token + 1
-#         last_idx = attention_mask.sum(dim=-1) - 1       # [B]
-#         last_idx = last_idx.clamp(min=0).long()
-
-#         h = last_layer[
-#             torch.arange(B, device=last_layer.device),
-#             last_idx,
-#         ]  # [B, HiddenDim]
-
-#     elif pool == "mean":
-#         mask = attention_mask.unsqueeze(-1).float()     # [B, S, 1]
-#         h = (last_layer * mask).sum(dim=1)              # [B, HiddenDim]
-#         h = h / mask.sum(dim=1).clamp(min=1)            # [B, HiddenDim]
-
-#     else:
-#         raise ValueError(f"Unknown pool strategy: '{pool}'")
-
-#     return h  # [B, HiddenDim]
-
-
+    #     else:
+    #         raise ValueError(f"Unknown pool strategy: '{pool}'")
+        return h
 
 
 

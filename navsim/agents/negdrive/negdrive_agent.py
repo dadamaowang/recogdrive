@@ -288,11 +288,12 @@ class NegDriveAgent(AbstractAgent):
                 
             # TODO add option
             # get gaussian log prob
-            log_probs = self.vlm.compute_gaussian_logprob(policy_output=outputs)
+            log_probs, policy_h = self.vlm.compute_gaussian_logprob(policy_output=outputs)
             
-            # print('检查模型输出')
-            # print(outputs)
-            # print('成功')
+            print('检查计算输出')
+            print(log_probs)
+            print(policy_h)
+            print('成功')
 
 
             # last_hidden_state = outputs.hidden_states[-1]   # TODO 提取 log_probs 和 entropy 这部分
