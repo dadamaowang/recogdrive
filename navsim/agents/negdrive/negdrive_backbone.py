@@ -6,7 +6,7 @@
 @Version :   0.0.1
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   正在考察 forward 和后续模型训练联动
+@Status  :   正在改成生成 text tokens, 还是用 diffusion planner 优化
 @Desc    :   重要
 '''
 
@@ -81,9 +81,9 @@ class NegDriveBackbone(nn.Module):
         print(f"Initializing backbone of type: '{self.model_type}' from path: '{checkpoint_path}'")
 
         if self.model_type == "internvl":
-            # TODO : 只是一个 backbone ? 好像不是很合理
-            # （1） 改成加一个头，微调
-            # （2） COVT
+            # TODO 头 + LoRA
+            # LoRA 策略问题
+
             self.model = AutoModel.from_pretrained(     
                 checkpoint_path,
                 torch_dtype="auto",     
@@ -100,6 +100,13 @@ class NegDriveBackbone(nn.Module):
             # Load model-specific configuration
             self._configure_internvl()
             self.num_image_token = 256
+
+
+            print('检查')
+            for name, module in self.model.language_model.named_modules():
+                if isinstance(module, torch.nn.Linear):
+                    print(name)
+            
 
         elif self.model_type == 'qwen':
             raise NotImplementedError
@@ -123,6 +130,8 @@ class NegDriveBackbone(nn.Module):
         print(f"Backbone '{self.model_type}' loaded successfully on device '{self.device}'.")
 
 
+
+
     def _configure_internvl(self):
         """Applies specific configurations required for the InternVL model."""
         self.model.system_message = system_message
@@ -130,6 +139,41 @@ class NegDriveBackbone(nn.Module):
         self.model.img_context_token_id = self.img_context_token_id
         print("InternVL model configured.")
         
+
+
+
+    # def set_finetune_mode(self, finetune: bool):
+    #     """
+    #     Sets the training mode for the VLM and configures which parameters are trainable.
+    #     """
+    #     self.finetune = finetune
+    #     # self.finetune_llm_mode = mode
+
+    #     # 1. 首先冻结所有参数
+    #     for param in self.model.parameters():
+    #         param.requires_grad = False
+
+    #     if not self.finetune:
+    #         print("Setting VLM to evaluation mode with all parameters frozen.")
+    #         self.model.eval()
+    #         return
+
+    #     # 2. 如果需要微调，则解冻特定参数
+    #     print(f"Setting VLM to training mode. Finetuning attention and MLP layers.")
+    #     self.model.train()
+
+    #     # 解冻attention和MLP层的参数用于微调
+    #     trainable_keywords = ['attn', 'mlp']
+    #     trainable_count = 0
+    #     for name, param in self.model.named_parameters():
+    #         if any(keyword in name for keyword in trainable_keywords):
+    #             param.requires_grad = True
+    #             trainable_count += 1
+        
+    #     print(f"Unfroze {trainable_count} parameter groups for fine-tuning.")
+
+
+
 
     def forward(self, 
                 pixel_values: torch.Tensor, 
@@ -197,9 +241,8 @@ class NegDriveBackbone(nn.Module):
                 return_dict=True,
         )
 
-
         """
-        NOTE output class here
+        NOTE output class definition
         @dataclass
         class CausalLMOutputWithPast(ModelOutput):
             loss: Optional[torch.FloatTensor] = None
@@ -298,7 +341,6 @@ class NegDriveBackbone(nn.Module):
             h: [B, HiddenDim]
             
         """
-
         last_layer = hidden_states[-1]
         B, S, D = last_layer.shape
 
@@ -353,3 +395,4 @@ class NegDriveBackbone(nn.Module):
     #     logits = outputs.logits     # torch.Size([B, 2800(seq_len), 151682])
 
     #     return outputs
+

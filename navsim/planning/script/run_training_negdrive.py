@@ -48,27 +48,10 @@ def custom_collate_fn(
 
     features_list, targets_list, tokens_list = zip(*batch)
 
-    # print('features_list:')
-    # print(features_list)
-
-    # print('targets_list:')
-    # print(targets_list)
-
-    # print('tokens_list')
-    # print(tokens_list)
-
     # extract features 
     history_trajectory = torch.stack([features['history_trajectory'] for features in features_list], dim=0).cpu()
-    # print('history_trajectory')
-    # print(history_trajectory)
-
     high_command_one_hot = torch.stack([features['high_command_one_hot'] for features in features_list], dim=0).cpu()
-    # print('high_command_one_hot')
-    # print(high_command_one_hot)
-
     status_feature = torch.stack([features['status_feature'] for features in features_list], dim=0).cpu()   
-    # print('status_feature')
-    # print(status_feature)
 
     # # TODO 这个训 VLM 的时候暂时不开；
     # last_hidden_state = rnn_utils.pad_sequence(   # pad to same length   
@@ -84,8 +67,6 @@ def custom_collate_fn(
 
     # extract targets
     trajectory = torch.stack([targets['trajectory'] for targets in targets_list], dim=0).cpu()
-    # print('trajectory')
-    # print(trajectory)
 
     features = {
         'history_trajectory': history_trajectory,

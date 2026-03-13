@@ -231,74 +231,73 @@ class NegDriveAgent(AbstractAgent):
         if high_command_one_hot.ndim == 1:
             high_command_one_hot = high_command_one_hot.unsqueeze(0)
 
-        if self.cache_hidden_state:     
-            raise NotImplementedError
-            # last_hidden_state = features["last_hidden_state"].cuda() 
-        else:
-            if self.vlm is None:
-                raise RuntimeError("Agent is in 'no-cache' mode, but VLM backbone is not initialized.")
+
+        # we don't cache hidden state for VLM trianing 
+        # if self.cache_hidden_state:     
+        #     raise NotImplementedError
+        #     # last_hidden_state = features["last_hidden_state"].cuda() 
+
+        if self.vlm is None:
+            raise RuntimeError("Agent is in 'no-cache' mode, but VLM backbone is not initialized.")
+        
+        image_path_tensor = features["image_path_tensor"]
+        if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
+        image_paths = self._decode_paths_from_tensor(image_path_tensor)
+
+        pixel_values_list = [load_image(path) for path in image_paths] 
+        num_patches_list = [p.shape[0] for p in pixel_values_list]
+        pixel_values_cat = torch.cat(pixel_values_list, dim=0).cuda()
+
+        navigation_commands = ['turn left', 'go straight', 'turn right']
+        command_indices = torch.argmax(high_command_one_hot, dim=-1)
+        command_str_list = [navigation_commands[idx.item()] for idx in command_indices]
+
+        questions = []
+        batch_size = high_command_one_hot.shape[0]
+        for i in range(batch_size):
+            history_trajectory_sample = history_trajectory[i]
+            command_str_sample = command_str_list[i]
+
+            history_str = ' '.join([
+                f'   - t-{3-j}: ({format_number(history_trajectory_sample[j, 0].item())}, '
+                f'{format_number(history_trajectory_sample[j, 1].item())}, '
+                f'{format_number(history_trajectory_sample[j, 2].item())})'
+                for j in range(history_trajectory_sample.shape[0])
+            ])
+                                    
+            prompt = (
+                "<image>\nAs an autonomous driving system, predict the vehicle's trajectory based on:\n"
+                "1. Visual perception from front camera view\n"
+                f"2. Historical motion context (last 4 timesteps):{history_str}\n"
+                f"3. Active navigation command: [{command_str_sample.upper()}]"
+            )     # TODO 【TOEXP】
+
+            output_requirements = (
+                "\nOutput requirements:\n- Predict 8 future trajectory points\n"
+                "- Each point format: (x:float, y:float, heading:float)\n"
+                "- Use [PT, ...] to encapsulate the trajectory\n"
+                "- Maintain numerical precision to 2 decimal places"
+            )   # TODO 【TOEXP】
+
+            questions.append(f"{prompt}{output_requirements}")
+        
+
+        # -------------------------------------------------
+        # Rollout 
+        # -------------------------------------------------
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            outputs = self.vlm(
+                pixel_values_cat, 
+                questions, 
+                num_patches_list=num_patches_list,
+                )
             
-            image_path_tensor = features["image_path_tensor"]
-            if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
-            image_paths = self._decode_paths_from_tensor(image_path_tensor)
-
-            pixel_values_list = [load_image(path) for path in image_paths] 
-            num_patches_list = [p.shape[0] for p in pixel_values_list]
-            pixel_values_cat = torch.cat(pixel_values_list, dim=0).cuda()
-
-            navigation_commands = ['turn left', 'go straight', 'turn right']
-            command_indices = torch.argmax(high_command_one_hot, dim=-1)
-            command_str_list = [navigation_commands[idx.item()] for idx in command_indices]
-
-            questions = []
-            batch_size = high_command_one_hot.shape[0]
-            for i in range(batch_size):
-                history_trajectory_sample = history_trajectory[i]
-                command_str_sample = command_str_list[i]
-
-                history_str = ' '.join([
-                    f'   - t-{3-j}: ({format_number(history_trajectory_sample[j, 0].item())}, '
-                    f'{format_number(history_trajectory_sample[j, 1].item())}, '
-                    f'{format_number(history_trajectory_sample[j, 2].item())})'
-                    for j in range(history_trajectory_sample.shape[0])
-                ])
-                                        
-                prompt = (
-                    "<image>\nAs an autonomous driving system, predict the vehicle's trajectory based on:\n"
-                    "1. Visual perception from front camera view\n"
-                    f"2. Historical motion context (last 4 timesteps):{history_str}\n"
-                    f"3. Active navigation command: [{command_str_sample.upper()}]"
-                )     # TODO 【TOEXP】
-
-                output_requirements = (
-                    "\nOutput requirements:\n- Predict 8 future trajectory points\n"
-                    "- Each point format: (x:float, y:float, heading:float)\n"
-                    "- Use [PT, ...] to encapsulate the trajectory\n"
-                    "- Maintain numerical precision to 2 decimal places"
-                )   # TODO 【TOEXP】
-
-                questions.append(f"{prompt}{output_requirements}")
-            
-            with torch.autocast("cuda", dtype=torch.bfloat16):
-                outputs = self.vlm(
-                    pixel_values_cat, 
-                    questions, 
-                    num_patches_list=num_patches_list,
-                    )
-                
-            # TODO add option
-            # get gaussian log prob
-            log_probs, policy_h = self.vlm.compute_gaussian_logprob(policy_output=outputs)
-            
-            print('检查计算输出')
-            print(log_probs)
-            print(policy_h)
-            print('成功')
+        # TODO add option
+        # get gaussian log prob
+        log_probs, policy_h = self.vlm.compute_gaussian_logprob(policy_output=outputs)
+        
 
 
-            # last_hidden_state = outputs.hidden_states[-1]   # TODO 提取 log_probs 和 entropy 这部分
-            # log_probs = outputs.log_probs          # (B, T)
-            # entropy = outputs.entropy              # (B,)
 
         status_feature = features["status_feature"].cuda()
         if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
