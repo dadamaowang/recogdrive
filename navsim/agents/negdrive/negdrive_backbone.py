@@ -105,8 +105,7 @@ class NegDriveBackbone(nn.Module):
             self.num_image_token = 256
             
             self._set_internvl_finetune_mode()  
-            self.model.gradient_checkpointing_enable()
-            self._print_trainable_parameters()  # DOING
+
             
 
         elif self.model_type == 'qwen':
@@ -125,12 +124,9 @@ class NegDriveBackbone(nn.Module):
         else:
             raise ValueError(f"Unsupported model_type: '{self.model_type}'. Please choose 'internvl' or 'qwen'.")
 
-        
-        self.model.gradient_checkpointing_enable()  # TODO 
-
+        self.model.gradient_checkpointing_enable()
+        self._print_trainable_parameters()  
         print(f"Backbone '{self.model_type}' loaded successfully on device '{self.device}'.")
-
-
 
 
     def _configure_internvl(self):
@@ -238,6 +234,19 @@ class NegDriveBackbone(nn.Module):
         print(f"LORA APPLIED: R={r}, ALPHA={lora_alpha}, DROPOUT={lora_dropout}")
         
 
+    def _print_trainable_parameters(self):
+        """
+        Docstring for _print_trainable_parameters
+        
+        :param self: Description
+        """
+        trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in self.parameters())
+        pct = 100 * trainable / total if total > 0 else 0
+        print(f"Trainable parameters: {trainable:,} / {total:,} "
+              f"({pct:.2f}%)"
+              )
+        
 
     def forward(self, 
                 pixel_values: torch.Tensor, 
