@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from transformers import AutoModel, AutoTokenizer
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
+from peft import LoraConfig, get_peft_model, TaskType
+
 from .utils.conversation import get_conv_template
 
 IMG_CONTEXT_TOKEN = '<IMG_CONTEXT>'
@@ -61,7 +63,8 @@ class NegDriveBackbone(nn.Module):
     def __init__(self,
                  model_type: str,
                  checkpoint_path: str,
-                 device: str = "cuda"
+                 device: str = "cuda",
+                 # TODO 添加 lora config 
                  ):
         """
         Initializes and loads the specified model and its preprocessor/tokenizer.
@@ -100,12 +103,10 @@ class NegDriveBackbone(nn.Module):
             # Load model-specific configuration
             self._configure_internvl()
             self.num_image_token = 256
-
-
-            print('检查')
-            for name, module in self.model.language_model.named_modules():
-                if isinstance(module, torch.nn.Linear):
-                    print(name)
+            
+            self._set_internvl_finetune_mode()  
+            self.model.gradient_checkpointing_enable()
+            self._print_trainable_parameters()  # DOING
             
 
         elif self.model_type == 'qwen':
@@ -140,9 +141,30 @@ class NegDriveBackbone(nn.Module):
         print("InternVL model configured.")
         
 
+    def _set_internvl_finetune_mode(self):
+        """
+        (for internvl) Freeze vision encoder, mlp projector, and apply lora to language model 
+
+        """
+
+        # freeze vision encoder 
+        for param in self.model.vision_model.parameters():
+            param.requires_grad = False
+        print('VISION ENCODER FROZEN.')
+
+        # freeze mlp that projects vision features into language space.
+        # In InternVL this is self.model.mlpq
+        for param in self.model.mlp1.parameters():
+            param.requires_grad = False 
+        print("MLP PROJECTOR FROZEN")
+    
+        # apply LoRA to language model
+        self._apply_lora_to_language_model(r=16,
+                                           lora_alpha=32,
+                                           lora_dropout=0.05)
 
 
-    # def set_finetune_mode(self, finetune: bool):
+    # def set_finetune_mode(self, finetune: bool): 全量微调
     #     """
     #     Sets the training mode for the VLM and configures which parameters are trainable.
     #     """
@@ -172,7 +194,49 @@ class NegDriveBackbone(nn.Module):
         
     #     print(f"Unfroze {trainable_count} parameter groups for fine-tuning.")
 
+    def _apply_lora_to_language_model(self,
+                    r: int,
+                    lora_alpha: int,
+                    lora_dropout: float,
+                    ):
+        """
+        Apply LoRA to **Qwen2ForCausalLM** language model inside VLM backbone (attention and MLP layers).
+        TODO 不同的 self.model.language_model 
 
+        LoRA freezes the original weights and adds small trainable
+        low-rank matrices A and B beside each target linear layer:
+            W' = W + (B @ A) * (alpha / r) 
+        
+        Qwen2 layer names (confirmed by inspection):
+            Attention: q_proj, k_proj, v_proj, o_proj
+            MLP:       gate_proj, up_proj, down_proj  
+
+
+        """
+        lora_config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            r=r,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            bias="none",
+            target_modules=[
+                # Qwen2 attention projections
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                # Qwen2 MLP projections
+                "gate_proj",
+                "up_proj",
+                "down_proj"
+            ],
+        )
+        self.model.language_model = get_peft_model(
+            self.model.language_model,
+            lora_config
+        )
+        print(f"LORA APPLIED: R={r}, ALPHA={lora_alpha}, DROPOUT={lora_dropout}")
+        
 
 
     def forward(self, 
