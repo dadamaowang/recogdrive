@@ -55,6 +55,23 @@ class NegDriveBackboneOutput:
     attention_mask: torch.Tensor    # [B, SeqLen]
 
 
+
+@dataclass
+class NegDriveGenOutput:
+    """
+    Everything needed downstream after VLM text generation.
+
+    """
+    full_ids: torch.Tensor    # [B, PromptLen + NewTokens]
+    attention_mask: torch.Tensor    # [B, PromptLen + NewTokens]
+    response_start_idx: int     # scalar - where generated tokens begin
+    text_actions: List[str]     # decoded text, len=B
+
+
+
+
+
+
 class NegDriveBackbone(nn.Module):
     """
     A simplified vision-language model backbone with direct loading logic
@@ -107,7 +124,6 @@ class NegDriveBackbone(nn.Module):
             self._set_internvl_finetune_mode()  
 
             
-
         elif self.model_type == 'qwen':
             raise NotImplementedError
             # TODO qwen 也得 config
@@ -253,30 +269,12 @@ class NegDriveBackbone(nn.Module):
                 questions: List[str], 
                 num_patches_list: List[int]
                 ):
-        
-        # TODO 看看 Qwen 能不能也用这个 forward 
-        
         if not self.model:
             raise RuntimeError("Backbone model has not been initialized. Call initialize() on the agent first.")
-        
-        queries = []
-        for idx, num_patches in enumerate(num_patches_list):
-            question = questions[idx]
-            if pixel_values is not None and '<image>' not in question:
-                question = '<image>\n' + question
-            
-            template = get_conv_template("internvl2_5")
-            template.system_message = system_message
-            template.append_message(template.roles[0], question)
-            template.append_message(template.roles[1], None)
-            query = template.get_prompt()
 
-            image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * self.num_image_token * num_patches + IMG_END_TOKEN
-            query = query.replace('<image>', image_tokens, 1)
-            queries.append(query)
+        queries = self._build_queries(pixel_values, questions, num_patches_list)
 
         self.tokenizer.padding_side = 'left'
-
         model_inputs = self.tokenizer(queries, 
                                       return_tensors='pt', 
                                       padding='max_length', 
@@ -338,6 +336,110 @@ class NegDriveBackbone(nn.Module):
             input_ids=input_ids,
             attention_mask=attention_mask
         )
+    
+
+    def generate_text_actions(
+                self,
+                pixel_values: torch.Tensor,
+                questions: List[str],
+                num_patches_list: List[int], 
+                max_new_tokens: int = 64,   # TODO 这里到底生成多少个比较好
+        ) -> NegDriveGenOutput:
+        """
+        Run VLM in generation mode to produce one text response per batch item. 
+        Called G times in _step() - each call produces different tokens (do_sample=True) 
+        source of diversity for GRPO's G group samples
+
+        Args:
+            pixel_values:     [B * NumPatches, C, H, W]
+            questions:        List[str], len=B
+            num_patches_list: List[int], len=B
+            max_new_tokens:   How many tokens to generate per response.
+                            
+        Returns:
+            GenerationOutput                            
+        """
+        queries = self._build_queries(pixel_values, questions, num_patches_list)
+        
+        self.tokenizer.padding_size = 'left'
+        model_inputs = self.tokenizer(
+            queries,
+            return_tensors='pt',
+            padding=True,
+            truncation=True,
+            max_length=2800,
+        )
+        device = torch.device("cuda")
+        input_ids = model_inputs['input_ids'].to(device)
+        attention_mask = model_inputs['attention_mask'].to(device)
+        prompt_len = input_ids.shape[1]
+
+        num_patches = pixel_values.size(0)
+        image_flags = torch.tensor([1] * num_patches, dtype=torch.long)
+
+        import inspect
+        print(inspect.signature(self.model.generate))
+        print("问题排查")
+
+        generated_ids = self.model.generate(
+            pixel_values=pixel_values,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            image_flags=image_flags,
+            max_new_tokens=max_new_tokens,
+            do_sample=True,
+            temperature=1.0,
+            pad_token_id=self.tokenizer.eos_token_id
+        )   # [B, PromptLen + max_new_tokens]
+        print(f"检查三：生成的 id 检查：{generated_ids}")
+
+        # TODO 目的？
+        # Build attention mask for full sequence (prompt + generated)
+        full_len = generated_ids.shape[1]
+        full_attention_mask = torch.ones(
+            generated_ids.shape[0], full_len,
+            dtype=torch.long, device=device
+        )
+        # Restore prompt padding (left-padded prompt may have 0s on the left)
+        full_attention_mask[:, :prompt_len] = attention_mask
+
+        # Decode generated tokens only (strip prompt)
+        response_ids = generated_ids[:, prompt_len:]
+        text_actions = self.tokenizer.batch_decode(
+            response_ids, skip_special_tokens=True
+        )
+        print(f"检查四：生成的文字检查: {text_actions}")
+
+        return NegDriveGenOutput(
+            full_ids=generated_ids,
+            attention_mask=full_attention_mask,
+            response_start_idx=prompt_len,
+            text_actions=text_actions
+        )
+
+
+    def _build_queries(self,
+                       pixel_values,
+                       questions,
+                       num_patches_list
+                      ):
+        queries = []
+        for idx, num_patches in enumerate(num_patches_list):
+            question = questions[idx]
+            if pixel_values is not None and '<image>' not in question:
+                question = '<image>\n' + question
+            
+            template = get_conv_template("internvl2_5")
+            template.system_message = system_message
+            template.append_message(template.roles[0], question)
+            template.append_message(template.roles[1], None)
+            query = template.get_prompt()
+
+            image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * self.num_image_token * num_patches + IMG_END_TOKEN
+            query = query.replace('<image>', image_tokens, 1)
+            queries.append(query)
+
+        return queries
     
 
     def compute_gaussian_logprob(
