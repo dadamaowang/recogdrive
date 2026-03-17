@@ -419,12 +419,17 @@ class AgentLightningVLMRL(pl.LightningModule):
 
                     # Run diffusion planner with shared hidden state 
                     # NOTE: use SAME hidden states for all G rollouts 
-                    # Diversity comes from text generation, not diffusion noise 
+                    # Diversity comes from text generation, not diffusion noise
+
+                    actions = self.agent.action_head.get_action(
+                        last_hidden_states.to(diff_dtype),
+                        diff_input
+                    )   
+                    print("输出动作检查：")
+                    print(actions)
+
+                    # Score
                     
-                    
-
-
-
 
 
 

@@ -211,32 +211,7 @@ class NegDriveAgent(AbstractAgent):
         
         dtype = next(self.vlm.parameters()).type()
         
-
-                # -------------------------------------------------
-        # Build diffusion inputs (NO GRAD)
-        # -------------------------------------------------
-        diff_dtype = next(self.action_head.parameters()).dtype
-        action_inputs = BatchFeature({
-            "state": input_state.to(diff_dtype),
-            "his_traj": history_trajectory_reshaped.to(diff_dtype),
-            "status_feature": status_feature.to(diff_dtype)
-        }
-        )
-        with torch.no_grad():
-            actions = self.action_head.get_action(
-                last_hidden_state.to(diff_dtype), 
-                action_inputs
-            )        
-    #     if self.training and not self.grpo:   # TODO 有必要再弄可配置的
-    #         action_inputs = BatchFeature(data={"state": input_state.to(model_dtype), "his_traj": history_trajectory_reshaped.to(model_dtype), "status_feature": status_feature.to(model_dtype), "action": targets["trajectory"].to(model_dtype)})
-    #         return self.action_head(last_hidden_state, action_inputs)
-    #     elif self.training and self.grpo:
-    #         action_inputs = BatchFeature(data={"state": input_state.to(model_dtype), "his_traj": history_trajectory_reshaped.to(model_dtype), "status_feature": status_feature.to(model_dtype), "action": targets["trajectory"].to(model_dtype)})
-    #         return self.action_head.forward_grpo(last_hidden_state, action_inputs, tokens_list)
-    #     else: 
-    #         action_inputs = BatchFeature({"state": input_state.to(model_dtype), "his_traj": history_trajectory_reshaped.to(model_dtype), "status_feature": status_feature.to(model_dtype)})
-    #         return self.action_head.get_action(last_hidden_state.to(model_dtype), action_inputs)
-
+   
         # -------------------------------------------------
         # TRAINING: GRPO loss on VLM
         # -------------------------------------------------  
