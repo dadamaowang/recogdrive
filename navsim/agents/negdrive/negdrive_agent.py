@@ -34,11 +34,7 @@ from .utils.utils import format_number, build_from_configs
 from .negdrive_features import NegDriveFeatureBuilder, NegDriveTrajectoryTargetBuilder
 
 from .negdrive_backbone import NegDriveBackbone
-# from .recogdrive_backbone import RecogDriveBackbone
-# from .recogdrive_diffusion_planner import (
-#     ReCogDriveDiffusionPlanner,
-#     ReCogDriveDiffusionPlannerConfig,
-# )
+from navsim.agents.recogdrive.recogdrive_diffusion_planner import ReCogDriveDiffusionPlanner, ReCogDriveDiffusionPlannerConfig
 
 
 
@@ -65,7 +61,6 @@ class NegDriveAgent(AbstractAgent):
 
         # ========== RL / GRPO ==========
         use_grpo: bool = True,
-        reference_policy_checkpoint: Optional[str] = None,  # TODO 原本给 diffu 的，可能不需要
         metric_cache_path: Optional[str] = None,    # TODO 原本给 diffu 的，可能不需要
         reward_scale: float = 1.0,
         entropy_coef: float = 0.01,
@@ -108,38 +103,38 @@ class NegDriveAgent(AbstractAgent):
             device=self.device,
         )
         
-        # # -----------------------
-        # # Diffusion planner (frozen)
-        # # -----------------------
-        # self.freeze_diffusion = freeze_diffusion
-        
-        # self.dit_type = dit_type
+        # -----------------------
+        # Diffusion planner (frozen)
+        # -----------------------
+        self.freeze_diffusion = freeze_diffusion
+        self.dit_type = dit_type
 
-        # self.metric_cache_path = metric_cache_path
-        # self.reference_policy_checkpoint = reference_policy_checkpoint
+        # self.metric_cache_path = metric_cache_path TODO 
 
-        # if self.freeze_diffusion:
-        #     input_dim = 1536 if vlm_size == "large" else 384
-        #     cfg = make_diffusion_planner_config(   
-        #             self.dit_type, 
-        #             action_dim=3, 
-        #             action_horizon=8, 
-        #             grpo=False, 
-        #             input_embedding_dim=input_dim,
-        #             sampling_method=sampling_method
-        #             )
-        #     self.action_head = NegDriveDiffusionPlanner(cfg).to(self.device)    #TODO head 
-        #     for p in self.action_head.parameters():
-        #         p.requires_grad = False
+        if self.freeze_diffusion:
+            input_dim = 1536 if vlm_size == "large" else 384
+            cfg = make_diffusion_planner_config(   
+                    self.dit_type, 
+                    action_dim=3, 
+                    action_horizon=8, 
+                    grpo=False, 
+                    input_embedding_dim=input_dim,
+                    sampling_method=sampling_method
+                    )
+            print("检查Diff-01: Config 成功")
             
-        # else:
-        #     raise NotImplementedError
+            self.action_head = ReCogDriveDiffusionPlanner(cfg).to(self.device)
+            print("检查Diff-02: 初始化")
+
+            for p in self.action_head.parameters():
+                p.requires_grad = False
+        else:
+            raise NotImplementedError
 
         # # optional planner checkpoint
         # self.checkpoint_path = diff_checkpoint_path  # TODO
         # # if checkpoint_path: 
         # #     self._load_planner_checkpoint(checkpoint_path)  # TODO
-
 
         # # -----------------------
         # # GRPO / RL parameters
@@ -217,14 +212,7 @@ class NegDriveAgent(AbstractAgent):
         dtype = next(self.vlm.parameters()).type()
         
 
-
-            
-        # TODO add option
-        # get gaussian log prob
-        log_probs, policy_h = self.vlm.compute_gaussian_logprob(policy_output=outputs)
         
-
-
         status_feature = features["status_feature"].cuda()
         if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
         if last_hidden_state.ndim == 2: last_hidden_state = last_hidden_state.unsqueeze(0)
@@ -405,62 +393,62 @@ class NegDriveAgent(AbstractAgent):
 
 
 
-# def make_diffusion_planner_config(
-#     size: str,
-#     *,
-#     action_dim: int,
-#     action_horizon: int,
-#     input_embedding_dim: int,
-#     sampling_method: str = 'ddim',
-#     num_inference_steps: int = 5,
-#     grpo: bool = False,
-#     model_dtype: str = "float16",
-# ) -> ReCogDriveDiffusionPlannerConfig:
-#     """
-#     A factory function to create a ReCogDriveDiffusionPlannerConfig (our diffusion planner head) object.
+def make_diffusion_planner_config(  # TODO change hyper
+    size: str,
+    *,
+    action_dim: int,
+    action_horizon: int,
+    input_embedding_dim: int,
+    sampling_method: str = 'ddim',
+    num_inference_steps: int = 5,
+    grpo: bool = False,
+    model_dtype: str = "float16",
+) -> ReCogDriveDiffusionPlannerConfig:
+    """
+    A factory function to create a ReCogDriveDiffusionPlannerConfig (our diffusion planner head) object.
 
-#     This function simplifies configuration by using a size preset ("small",
-#     "large", "large_new") to define the core DiT architecture, while allowing
-#     other important planner settings to be specified.
+    This function simplifies configuration by using a size preset ("small",
+    "large", "large_new") to define the core DiT architecture, while allowing
+    other important planner settings to be specified.
 
-#     Args:
-#         size (str): The size preset for the DiT backbone.
-#         action_dim (int): The dimension of the action space.
-#         action_horizon (int): The number of future action steps to predict.
-#         input_embedding_dim (int): Dimension of the input embeddings to the DiT.
-#         sampling_method (str): The core training and sampling methodology.
-#         num_inference_steps (int): Number of steps for inference sampling.
-#         grpo (bool): If True, enables GRPO-specific logic.
-#         model_dtype (str): The data type for model computations.
+    Args:
+        size (str): The size preset for the DiT backbone.
+        action_dim (int): The dimension of the action space.
+        action_horizon (int): The number of future action steps to predict.
+        input_embedding_dim (int): Dimension of the input embeddings to the DiT.
+        sampling_method (str): The core training and sampling methodology.
+        num_inference_steps (int): Number of steps for inference sampling.
+        grpo (bool): If True, enables GRPO-specific logic.
+        model_dtype (str): The data type for model computations.
 
-#     Returns:
-#         ReCogDriveDiffusionPlannerConfig: An instantiated and configured planner config object.
-#     """
-#     size = size.lower()
-#     if size == "small":
-#         diffusion_model_cfg = {"num_heads": 8, "head_dim": 48, "num_layers": 16,"output_dim":512}
-#     elif size == "large":
-#         diffusion_model_cfg = {"num_heads": 32, "head_dim": 48, "num_layers": 16,"output_dim":1536}
-#     else:
-#         raise ValueError(f"Unknown model size: {size!r}")
+    Returns:
+        ReCogDriveDiffusionPlannerConfig: An instantiated and configured planner config object.
+    """
+    size = size.lower()
+    if size == "small":
+        diffusion_model_cfg = {"num_heads": 8, "head_dim": 48, "num_layers": 16,"output_dim":512}
+    elif size == "large":
+        diffusion_model_cfg = {"num_heads": 32, "head_dim": 48, "num_layers": 16,"output_dim":1536}
+    else:
+        raise ValueError(f"Unknown model size: {size!r}")
 
-#     common_params: Dict[str, any] = {
-#         "dropout": 0.0,
-#         "attention_bias": True,
-#         "norm_eps": 1e-5,
-#         "interleave_attention": True,
-#     }
-#     diffusion_model_cfg.update(common_params)
+    common_params: Dict[str, any] = {
+        "dropout": 0.0,
+        "attention_bias": True,
+        "norm_eps": 1e-5,
+        "interleave_attention": True,
+    }
+    diffusion_model_cfg.update(common_params)
 
-#     config = ReCogDriveDiffusionPlannerConfig(     # TODO
-#         diffusion_model_cfg=diffusion_model_cfg,
-#         action_dim=action_dim,
-#         action_horizon=action_horizon,
-#         input_embedding_dim=input_embedding_dim,
-#         sampling_method=sampling_method,
-#         num_inference_steps=num_inference_steps,
-#         grpo=grpo,
-#         model_dtype=model_dtype,
-#     )
+    config = ReCogDriveDiffusionPlannerConfig(     
+        diffusion_model_cfg=diffusion_model_cfg,
+        action_dim=action_dim,
+        action_horizon=action_horizon,
+        input_embedding_dim=input_embedding_dim,
+        sampling_method=sampling_method,
+        num_inference_steps=num_inference_steps,
+        grpo=grpo,
+        model_dtype=model_dtype,
+    )
     
-#     return config
+    return config

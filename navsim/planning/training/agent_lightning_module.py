@@ -387,6 +387,10 @@ class AgentLightningVLMRL(pl.LightningModule):
                     
                     all_policy_log_probs_old.append(old_log_probs)
 
+                    # Run diffusion planner with shared hidden state 
+                    # NOTE: use SAME hidden states for all G rollouts 
+                    # Diversity comes from text generation, not diffusion noise 
+                    
                     
 
 
