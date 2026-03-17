@@ -17,11 +17,15 @@ from torch import Tensor
 from typing import Dict, Tuple, List, Any
 import torch.nn.functional as F 
 
+from transformers.feature_extraction_utils import BatchFeature
+
 from navsim.agents.abstract_agent import AbstractAgent
 
 from navsim.agents.negdrive.utils.internvl_preprocess import load_image
 from navsim.agents.negdrive.utils.utils import format_number
 from navsim.agents.negdrive.negdrive_backbone import NegDriveGenOutput
+
+
 
 
 def decode_paths_from_tensor(path_tensor: torch.Tensor) -> List[str]:
@@ -358,11 +362,37 @@ class AgentLightningVLMRL(pl.LightningModule):
             # VLM forward once for hidden states -> diffusion planner 
             # This hidden state is shared across all G rollouts 
             with torch.autocast("cuda", dtype=torch.bfloat16):
+                # Prepare Diffusion Planner Input
                 fwd_output = self.agent.vlm.forward(
                     pixel_values_cat, 
                     questions, 
                     num_patches_list=num_patches_list,
                 )
+            last_hidden_states = fwd_output.hidden_states[-1]
+
+            print("检查 last hidden state")
+            print(last_hidden_states)
+
+            status_feature = features["status_feature"].cuda()
+            if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
+            if last_hidden_states.ndim == 2: last_hidden_states = last_hidden_states.unsqueeze(0)
+
+            history_trajectory_reshaped = history_trajectory.view(history_trajectory.size(0), -1)
+            state_input = torch.cat([status_feature, history_trajectory_reshaped], dim=1)
+
+            print("检查 state_input:")
+            print(state_input)
+
+            diff_dtype = next(self.agent.action_head.parameters()).dtype
+            diff_input = BatchFeature({
+                "state": state_input.to(diff_dtype),
+                "his_traj": history_trajectory_reshaped.to(diff_dtype),
+                "status_feature": status_feature.to(diff_dtype)
+            }
+            )  
+            print("检查 Diffusion Inputs")
+            print(diff_input)
+
 
             for g in range(self.G):
                 

@@ -212,15 +212,7 @@ class NegDriveAgent(AbstractAgent):
         dtype = next(self.vlm.parameters()).type()
         
 
-        
-        status_feature = features["status_feature"].cuda()
-        if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
-        if last_hidden_state.ndim == 2: last_hidden_state = last_hidden_state.unsqueeze(0)
-
-        history_trajectory_reshaped = history_trajectory.view(history_trajectory.size(0), -1)
-        input_state = torch.cat([status_feature, history_trajectory_reshaped], dim=1)
-
-        # -------------------------------------------------
+                # -------------------------------------------------
         # Build diffusion inputs (NO GRAD)
         # -------------------------------------------------
         diff_dtype = next(self.action_head.parameters()).dtype
