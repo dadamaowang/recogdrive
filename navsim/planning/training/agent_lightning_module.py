@@ -365,7 +365,6 @@ class AgentLightningVLMRL(pl.LightningModule):
                 )
 
             for g in range(self.G):
-
                 
                 with torch.autocast("cuda", dtype=torch.bfloat16):
                     # Generate text action
