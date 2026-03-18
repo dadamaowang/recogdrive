@@ -370,18 +370,12 @@ class AgentLightningVLMRL(pl.LightningModule):
                 )
             last_hidden_states = fwd_output.hidden_states[-1]
 
-            print("检查 last hidden state")
-            print(last_hidden_states)
-
             status_feature = features["status_feature"].cuda()
             if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
             if last_hidden_states.ndim == 2: last_hidden_states = last_hidden_states.unsqueeze(0)
 
             history_trajectory_reshaped = history_trajectory.view(history_trajectory.size(0), -1)
             state_input = torch.cat([status_feature, history_trajectory_reshaped], dim=1)
-
-            print("检查 state_input:")
-            print(state_input)
 
             diff_dtype = next(self.agent.action_head.parameters()).dtype
             diff_input = BatchFeature({
@@ -390,9 +384,6 @@ class AgentLightningVLMRL(pl.LightningModule):
                 "status_feature": status_feature.to(diff_dtype)
             }
             )  
-            print("检查 Diffusion Inputs")
-            print(diff_input)
-
 
             for g in range(self.G):
                 
@@ -429,6 +420,9 @@ class AgentLightningVLMRL(pl.LightningModule):
                     print(actions)
 
                     # Score
+                    # TODO 01 compatible 
+                    # 02 change into binary reward 
+                    
                     
 
 

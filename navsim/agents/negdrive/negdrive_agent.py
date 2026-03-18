@@ -121,10 +121,7 @@ class NegDriveAgent(AbstractAgent):
                     input_embedding_dim=input_dim,
                     sampling_method=sampling_method
                     )
-            print("检查Diff-01: Config 成功")
-            
             self.action_head =  NegDriveDiffusionPlanner(cfg).to(self.device)
-            print("检查Diff-02: 初始化")
 
             for p in self.action_head.parameters():
                 p.requires_grad = False
