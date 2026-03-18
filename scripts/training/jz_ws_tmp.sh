@@ -112,5 +112,5 @@ torchrun \
     trainer.params.strategy="ddp_find_unused_parameters_true" \
     trainer.params.devices=2 \
     agent.vlm_path="/UserData/xnq/navsim_workspace/models/Policy/ReCogDrive-VLM-2B/" \
-    agent.diff_path=/UserData/xnq/navsim_workspace/models/Planner/ReCogDrive-2B-RL"
+    agent.diff_path="/UserData/xnq/navsim_workspace/models/Planner/ReCogDrive-2B-RL"
 

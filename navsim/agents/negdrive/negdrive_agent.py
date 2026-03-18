@@ -19,7 +19,7 @@ from torch.optim import Optimizer
 import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 from omegaconf import DictConfig, OmegaConf
-# from transformers.feature_extraction_utils import BatchFeature
+from transformers.feature_extraction_utils import BatchFeature
 import math
 
 from navsim.agents.abstract_agent import AbstractAgent
