@@ -34,7 +34,7 @@ from .utils.utils import format_number, build_from_configs
 from .negdrive_features import NegDriveFeatureBuilder, NegDriveTrajectoryTargetBuilder
 
 from .negdrive_backbone import NegDriveBackbone
-from navsim.agents.recogdrive.recogdrive_diffusion_planner import ReCogDriveDiffusionPlanner, ReCogDriveDiffusionPlannerConfig
+from .negdrive_actionhead import NegDriveDiffusionPlannerConfig, NegDriveDiffusionPlanner
 
 
 
@@ -123,7 +123,7 @@ class NegDriveAgent(AbstractAgent):
                     )
             print("检查Diff-01: Config 成功")
             
-            self.action_head = ReCogDriveDiffusionPlanner(cfg).to(self.device)
+            self.action_head =  NegDriveDiffusionPlanner(cfg).to(self.device)
             print("检查Diff-02: 初始化")
 
             for p in self.action_head.parameters():
@@ -370,7 +370,7 @@ def make_diffusion_planner_config(  # TODO change hyper
     num_inference_steps: int = 5,
     grpo: bool = False,
     model_dtype: str = "float16",
-) -> ReCogDriveDiffusionPlannerConfig:
+) -> NegDriveDiffusionPlannerConfig:
     """
     A factory function to create a ReCogDriveDiffusionPlannerConfig (our diffusion planner head) object.
 
@@ -407,7 +407,7 @@ def make_diffusion_planner_config(  # TODO change hyper
     }
     diffusion_model_cfg.update(common_params)
 
-    config = ReCogDriveDiffusionPlannerConfig(     
+    config = NegDriveDiffusionPlannerConfig(     
         diffusion_model_cfg=diffusion_model_cfg,
         action_dim=action_dim,
         action_horizon=action_horizon,
