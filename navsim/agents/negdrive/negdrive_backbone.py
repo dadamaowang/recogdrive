@@ -371,30 +371,27 @@ class NegDriveBackbone(nn.Module):
         )
         device = torch.device("cuda")
         input_ids = model_inputs['input_ids'].to(device)
-        attention_mask = model_inputs['attention_mask'].to(device)
+        attention_mask = model_inputs['attention_mask'].to(device)  # [B, SeqLen]
         prompt_len = input_ids.shape[1]
+
 
         num_patches = pixel_values.size(0)
         image_flags = torch.tensor([1] * num_patches, dtype=torch.long)
-
-        import inspect
-        print(inspect.signature(self.model.generate))
-        print("问题排查")
 
         generated_ids = self.model.generate(
             pixel_values=pixel_values,
             input_ids=input_ids,
             attention_mask=attention_mask,
-            image_flags=image_flags,
-            max_new_tokens=max_new_tokens,
+            # image_flags=image_flags,  # TODO 这个不用有啥问题
+            max_new_tokens=max_new_tokens,  
             do_sample=True,
             temperature=1.0,
             pad_token_id=self.tokenizer.eos_token_id
-        )   # [B, PromptLen + max_new_tokens]
-        print(f"检查三：生成的 id 检查：{generated_ids}")
+        )   # [B, max_new_tokens] 
+        # 把 generated_ids 拼起来
 
-        # TODO 目的？
-        # Build attention mask for full sequence (prompt + generated)
+        # 
+        # Build attention mask for full sequence (prompt + generated)   TODO 目的？
         full_len = generated_ids.shape[1]
         full_attention_mask = torch.ones(
             generated_ids.shape[0], full_len,

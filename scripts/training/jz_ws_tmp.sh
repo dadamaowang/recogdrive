@@ -107,7 +107,7 @@ torchrun \
     cache_path=null \
     agent=negdrive_agent \
     force_cache_computation=False \
-    dataloader.params.batch_size=1 \
+    dataloader.params.batch_size=2 \
     trainer.params.max_epochs=4 \
     trainer.params.strategy="ddp_find_unused_parameters_true" \
     trainer.params.devices=2 \
