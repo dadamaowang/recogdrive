@@ -62,7 +62,8 @@ from .blocks.encoder import (
     StateAttentionEncoder,
     SwiGLUFFN,
 )
-from .recogdrive_dit import LightningDiT
+from .negdrive_dit import LightningDiT
+
 
 @dataclass
 class FlowConfig:
