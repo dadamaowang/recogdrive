@@ -343,7 +343,7 @@ class NegDriveBackbone(nn.Module):
                 pixel_values: torch.Tensor,
                 questions: List[str],
                 num_patches_list: List[int], 
-                max_new_tokens: int = 64,   # TODO 这里到底生成多少个比较好
+                max_new_tokens: int = 256,   # TODO 这里到底生成多少个比较好
         ) -> NegDriveGenOutput:
         """
         Run VLM in generation mode to produce one text response per batch item. 
@@ -406,16 +406,12 @@ class NegDriveBackbone(nn.Module):
         #   Build Full Sequence Attention Mask
         # ---------------------------------------
         #  (prompt + generated)   TODO log_prob 计算，目的等
-
         full_ids = torch.cat([input_ids, generated_ids], dim=1)   # [B, prompt_len + new_tokens]
-        print(f'检查FULL ID: {full_ids}')
 
         full_attention_mask = torch.cat([
             attention_mask, 
             torch.ones(input_ids.shape[0], generated_ids.shape[1], dtype=torch.long, device=device),
         ], dim=1)   # [B, prompt_len + new_tokens]
-
-        print(f"检查 full_attention_mask 的长度：{full_attention_mask.shape}")
 
         # ---------------------------------------
         #   Decode Generated Text
