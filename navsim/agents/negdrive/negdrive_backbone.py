@@ -359,6 +359,9 @@ class NegDriveBackbone(nn.Module):
         Returns:
             GenerationOutput                            
         """
+        # ----------------------
+        #   Prepare Input
+        # ----------------------
         queries = self._build_queries(pixel_values, questions, num_patches_list)
         
         self.tokenizer.padding_size = 'left'
@@ -370,14 +373,23 @@ class NegDriveBackbone(nn.Module):
             max_length=2800,
         )
         device = torch.device("cuda")
-        input_ids = model_inputs['input_ids'].to(device)
-        attention_mask = model_inputs['attention_mask'].to(device)  # [B, SeqLen]
-        prompt_len = input_ids.shape[1]
 
+        input_ids = model_inputs['input_ids'].to(device)    # [B, SeqLen]
+        attention_mask = model_inputs['attention_mask'].to(device)  # [B, SeqLen]
+        # ensure [B, SeqLen] (in case B=1)
+        if input_ids.ndim == 1:
+            input_ids = input_ids.unsqueeze(0)  # [1, SeqLen]
+        if attention_mask.ndim == 1:
+            attention_mask = attention_mask.unsqueeze(0)    # [1, SeqLen]
+
+        prompt_len = input_ids.shape[1]
 
         num_patches = pixel_values.size(0)
         image_flags = torch.tensor([1] * num_patches, dtype=torch.long)
 
+        # -----------------------
+        #   Generate New Tokens
+        # -----------------------
         generated_ids = self.model.generate(
             pixel_values=pixel_values,
             input_ids=input_ids,
@@ -390,25 +402,31 @@ class NegDriveBackbone(nn.Module):
         )   # [B, max_new_tokens] 
         # 把 generated_ids 拼起来
 
-        # 
-        # Build attention mask for full sequence (prompt + generated)   TODO 目的？
-        full_len = generated_ids.shape[1]
-        full_attention_mask = torch.ones(
-            generated_ids.shape[0], full_len,
-            dtype=torch.long, device=device
-        )
-        # Restore prompt padding (left-padded prompt may have 0s on the left)
-        full_attention_mask[:, :prompt_len] = attention_mask
+        # ---------------------------------------
+        #   Build Full Sequence Attention Mask
+        # ---------------------------------------
+        #  (prompt + generated)   TODO log_prob 计算，目的等
 
-        # Decode generated tokens only (strip prompt)
-        response_ids = generated_ids[:, prompt_len:]
+        full_ids = torch.cat([input_ids, generated_ids], dim=1)   # [B, prompt_len + new_tokens]
+        print(f'检查FULL ID: {full_ids}')
+
+        full_attention_mask = torch.cat([
+            attention_mask, 
+            torch.ones(input_ids.shape[0], generated_ids.shape[1], dtype=torch.long, device=device),
+        ], dim=1)   # [B, prompt_len + new_tokens]
+
+        print(f"检查 full_attention_mask 的长度：{full_attention_mask.shape}")
+
+        # ---------------------------------------
+        #   Decode Generated Text
+        # ---------------------------------------
         text_actions = self.tokenizer.batch_decode(
-            response_ids, skip_special_tokens=True
+            generated_ids, skip_special_tokens=True
         )
         print(f"检查四：生成的文字检查: {text_actions}")
 
         return NegDriveGenOutput(
-            full_ids=generated_ids,
+            full_ids=full_ids,
             attention_mask=full_attention_mask,
             response_start_idx=prompt_len,
             text_actions=text_actions

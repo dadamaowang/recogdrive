@@ -424,6 +424,7 @@ class AgentLightningVLMRL(pl.LightningModule):
                     # 02 change into binary reward 
                     
                     
+                    
 
 
 
