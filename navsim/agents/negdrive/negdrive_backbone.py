@@ -419,7 +419,7 @@ class NegDriveBackbone(nn.Module):
         text_actions = self.tokenizer.batch_decode(
             generated_ids, skip_special_tokens=True
         )
-        print(f"检查四：生成的文字检查: {text_actions}")
+        print(f"生成的文字检查 512 MAX: {text_actions}")
 
         return NegDriveGenOutput(
             full_ids=full_ids,

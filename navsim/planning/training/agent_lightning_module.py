@@ -393,9 +393,8 @@ class AgentLightningVLMRL(pl.LightningModule):
                         pixel_values_cat, 
                         questions, 
                         num_patches_list=num_patches_list,
-                        max_new_tokens=64,
+                        max_new_tokens=512,
                     )
-                    print("检查五：成功")
 
                     #  Compute log prob of this generation (old policy)
                     old_log_probs = compute_response_logprobs(
@@ -403,8 +402,6 @@ class AgentLightningVLMRL(pl.LightningModule):
                         pixel_values=pixel_values_cat,
                         generation_output=gen_output
                     )
-                    print("检查六：old log probs: ")
-                    print(old_log_probs)
                     
                     all_policy_log_probs_old.append(old_log_probs)
 
@@ -412,7 +409,7 @@ class AgentLightningVLMRL(pl.LightningModule):
                     # NOTE: use SAME hidden states for all G rollouts 
                     # Diversity comes from text generation, not diffusion noise
 
-                    actions = self.agent.action_head.get_action(
+                    actions = self.agent.action_head.get_action(    # G 
                         last_hidden_states.to(diff_dtype),
                         diff_input
                     )   
