@@ -350,51 +350,67 @@ class AgentLightningVLMRL(pl.LightningModule):
 
             questions.append(f"{prompt}{output_requirements}")
 
+
         # ---------------------------- ROLLOUT ------------------------------
-        # Generate G text responses 
+        # Generate G text responses, and corresponding hidden states
         # Run Diffusion Planner 
         # Score PDM
         # -------------------------------------------------------------------
+        all_gen_output = []
+        all_last_hidden_states = []
+        all_actions = []
         all_policy_log_probs_old = []   # [G, B] - log probs at generation time 
         all_rewards = []    # [G, B] - PDM scores 
 
         with torch.no_grad():
-            # VLM forward once for hidden states -> diffusion planner 
-            # This hidden state is shared across all G rollouts 
-            with torch.autocast("cuda", dtype=torch.bfloat16):
-                # Prepare Diffusion Planner Input
-                fwd_output = self.agent.vlm.forward(
-                    pixel_values_cat, 
-                    questions, 
-                    num_patches_list=num_patches_list,
-                )
-            last_hidden_states = fwd_output.hidden_states[-1]
-
-            status_feature = features["status_feature"].cuda()
-            if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
-            if last_hidden_states.ndim == 2: last_hidden_states = last_hidden_states.unsqueeze(0)
-
-            history_trajectory_reshaped = history_trajectory.view(history_trajectory.size(0), -1)
-            state_input = torch.cat([status_feature, history_trajectory_reshaped], dim=1)
-
-            diff_dtype = next(self.agent.action_head.parameters()).dtype
-            diff_input = BatchFeature({
-                "state": state_input.to(diff_dtype),
-                "his_traj": history_trajectory_reshaped.to(diff_dtype),
-                "status_feature": status_feature.to(diff_dtype)
-            }
-            )  
-
+            
             for g in range(self.G):
-                
+
                 with torch.autocast("cuda", dtype=torch.bfloat16):
-                    # Generate text action
+                    # Generate text reasoning
                     gen_output = self.agent.vlm.generate_text_actions(
                         pixel_values_cat, 
                         questions, 
                         num_patches_list=num_patches_list,
                         max_new_tokens=512,
                     )
+                    all_gen_output.append(gen_output)
+
+                    # Forward pass with full_ids, get last hidden states
+                    fwd_output = self.agent.vlm.forward_with_ids(
+                        pixel_values_cat,
+                        gen_output.full_ids,
+                        gen_output.attention_mask
+                    )
+                    last_hidden_states = fwd_output.hidden_states[-1]
+                    all_last_hidden_states.append(last_hidden_states)
+                    del fwd_output
+
+                    # extract and prepare planner input
+                    status_feature = features["status_feature"].cuda()
+                    if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
+                    if last_hidden_states.ndim == 2: last_hidden_states = last_hidden_states.unsqueeze(0)
+                    history_trajectory_reshaped = history_trajectory.view(history_trajectory.size(0), -1)
+                    state_input = torch.cat([status_feature, history_trajectory_reshaped], dim=1)
+                    diff_dtype = next(self.agent.action_head.parameters()).dtype
+                    diff_input = BatchFeature({
+                            "state": state_input.to(diff_dtype),
+                            "his_traj": history_trajectory_reshaped.to(diff_dtype),
+                            "status_feature": status_feature.to(diff_dtype)
+                        }
+                    )
+
+                    # get actions from planner 
+                    actions = self.agent.action_head.get_action(
+                        last_hidden_states.to(diff_dtype),
+                        diff_input
+                    )
+                    print('输出动作检查')
+                    print(actions)
+                    
+                    all_actions.append(actions)
+
+
 
                     #  Compute log prob of this generation (old policy)
                     old_log_probs = compute_response_logprobs(
@@ -404,17 +420,6 @@ class AgentLightningVLMRL(pl.LightningModule):
                     )
                     
                     all_policy_log_probs_old.append(old_log_probs)
-
-                    # Run diffusion planner with shared hidden state 
-                    # NOTE: use SAME hidden states for all G rollouts 
-                    # Diversity comes from text generation, not diffusion noise
-
-                    actions = self.agent.action_head.get_action(    # G 
-                        last_hidden_states.to(diff_dtype),
-                        diff_input
-                    )   
-                    print("输出动作检查：")
-                    print(actions)
 
                     # Score
                     # TODO 01 compatible 

@@ -267,7 +267,8 @@ class NegDriveBackbone(nn.Module):
     def forward(self, 
                 pixel_values: torch.Tensor, 
                 questions: List[str], 
-                num_patches_list: List[int]
+                num_patches_list: List[int],
+                max_new_tokens: int = 512
                 ):
         if not self.model:
             raise RuntimeError("Backbone model has not been initialized. Call initialize() on the agent first.")
@@ -428,6 +429,76 @@ class NegDriveBackbone(nn.Module):
             text_actions=text_actions
         )
 
+    
+    def forward_with_ids(self,
+                         pixel_values: torch.Tensor,   
+                         input_ids: torch.Tensor,     # [B, SeqLen] - pre-build, includes response 
+                         attention_mask: torch.Tensor    # [B, SeqLen]
+                         ) -> NegDriveBackboneOutput:
+        """
+        Forward pass using pre-built input_ids instead of rebuilding from questions.
+        Used after generate_text_actions() to get hidden states conditioned
+        on the generated text response.
+
+        This is the key method that makes each G rollout produce a DIFFERENT 
+        hidden state - because each rollout has different generated tokens in input_ids.
+        """
+        device = torch.device('cuda')
+        input_ids = input_ids.to(device)
+        attention_mask = attention_mask.to(device)
+
+        position_ids = attention_mask.long().cumsum(-1) - 1
+        position_ids.masked_fill_(attention_mask == 0, 1)
+        
+        num_patches = pixel_values.size(0)
+        image_flags = torch.tensor([1] * num_patches, dtype=torch.long)
+
+        # return self.model(
+        #         # pixel_values=pixel_values.bfloat16(),  # 原始 code 是这样的 
+        #         pixel_values=pixel_values,
+        #         input_ids=input_ids,
+        #         attention_mask=attention_mask,
+        #         position_ids=position_ids,
+        #         image_flags=image_flags.squeeze(-1),
+        #         output_hidden_states=True,
+        #         return_dict=True,
+        # )
+
+        model_outputs = self.model(
+                pixel_values=pixel_values,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                image_flags=image_flags.squeeze(-1),
+                output_hidden_states=True,
+                return_dict=True,
+        )
+
+        """
+        NOTE output class definition
+        @dataclass
+        class CausalLMOutputWithPast(ModelOutput):
+            loss: Optional[torch.FloatTensor] = None
+
+            logits: torch.FloatTensor = None
+                (batch_size, sequence_length, config.vocab_size)
+                Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax)
+
+            past_key_values: Optional[List[torch.FloatTensor]] = None(?)
+
+            hidden_states: Optional[Tuple[torch.FloatTensor]] = None (?)
+                returned when ``output_hidden_states=True``
+                Hidden-states of the model at the output of each layer plus the initial embedding outputs.
+
+            attentions: Optional[Tuple[torch.FloatTensor]] = None (?)
+        """
+        return NegDriveBackboneOutput(
+            logits=model_outputs.logits,
+            hidden_states=model_outputs.hidden_states,
+            input_ids=input_ids,
+            attention_mask=attention_mask
+        )
+        
 
     def _build_queries(self,
                        pixel_values,
