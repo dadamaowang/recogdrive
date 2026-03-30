@@ -279,7 +279,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         super().__init__()
         self.agent = agent
 
-        self.G = 4  # TODO setting
+        self.G = 2  # TODO setting
 
 
 
@@ -384,6 +384,11 @@ class AgentLightningVLMRL(pl.LightningModule):
                     )
                     last_hidden_states = fwd_output.hidden_states[-1]
                     all_last_hidden_states.append(last_hidden_states)
+
+                    print('LAST HIDDEN STATES:')
+                    print(last_hidden_states)
+
+
                     del fwd_output
 
                     # extract and prepare planner input

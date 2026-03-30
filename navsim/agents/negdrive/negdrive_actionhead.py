@@ -104,7 +104,7 @@ class NegDriveDiffusionPlannerConfig(PretrainedConfig):
     num_inference_steps: int = 5
     model_dtype: str = "float16"
     grpo: bool = False
-    vlm_size: str = 'large'
+    vlm_size: str = 'large'     
     
     tune_projector: bool = True
     tune_diffusion_model: bool = True

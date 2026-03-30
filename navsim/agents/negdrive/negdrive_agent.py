@@ -60,8 +60,7 @@ class NegDriveAgent(AbstractAgent):
         diff_path: Optional[str] = None,
 
         # ========== RL / GRPO ==========
-        use_grpo: bool = True,
-        metric_cache_path: Optional[str] = None,    # TODO 原本给 diffu 的，可能不需要
+        metric_cache_path: Optional[str] = None,    # TODO 
         reward_scale: float = 1.0,
         entropy_coef: float = 0.01,
         kl_coef: float = 0.0,
@@ -92,10 +91,9 @@ class NegDriveAgent(AbstractAgent):
             )
         
         self.vlm_path = vlm_path
-        self.vlm_type = vlm_type    # TODO
-        self.vlm_size = vlm_size    # TODO
+        self.vlm_type = vlm_type   
+        self.vlm_size = vlm_size    
         self.train_vlm = train_vlm
-        self.grpo = use_grpo    # TODO
 
         self.vlm = NegDriveBackbone(     # TODO ori: ReCogDriveBackbone
             model_type=self.vlm_type,
@@ -106,8 +104,25 @@ class NegDriveAgent(AbstractAgent):
         # -----------------------
         # Diffusion planner (frozen)
         # -----------------------
+        self.diff_path = diff_path
         self.freeze_diffusion = freeze_diffusion
         self.dit_type = dit_type
+
+        print("DIFFUSION 总体检查：参数")
+
+        diff_ckpt = torch.load(self.diff_path, map_location="cpu", weights_only=False)
+
+        print(type(diff_ckpt))
+        print(diff_ckpt.keys())
+
+        state_dict = diff_ckpt["state_dict"]
+        keys = list(state_dict.keys())
+
+        print(f"Total parameters: {len(keys)}")
+        print("\nFirst 20 keys:")
+        for k in keys[:20]:
+            print(f"  {k}")
+
 
         # self.metric_cache_path = metric_cache_path TODO 
 
@@ -122,6 +137,12 @@ class NegDriveAgent(AbstractAgent):
                     sampling_method=sampling_method
                     )
             self.action_head =  NegDriveDiffusionPlanner(cfg).to(self.device)
+
+            diff_ckpt = torch.load(self.diff_path, map_location="cpu", weights_only=False)
+
+
+
+            
 
             for p in self.action_head.parameters():
                 p.requires_grad = False
@@ -206,42 +227,7 @@ class NegDriveAgent(AbstractAgent):
                 tokens_list = None
                 ) -> Dict[str, torch.Tensor]:
         
-        dtype = next(self.vlm.parameters()).type()
-        
-   
-        # -------------------------------------------------
-        # TRAINING: GRPO loss on VLM
-        # -------------------------------------------------  
-        if self.training and self.grpo:     # TODO self.training flag 在哪里 tag 
-            rewards = self._compute_vlm_rlvr_reward(    # TODO compute rlvr reward, 结合 ne reinforce 
-                traj_outputs = actions,
-                targets = targets,
-            )
-
-            # TODO 拿出去 positive 的
-
-            grpo_loss = self._compute_vlm_grpo_loss(    # TODO compute GRPO 
-                log_probs = log_probs,
-                rewards = rewards,
-                entropy = entropy,
-                tokens = tokens_list
-            )
-
-            return {    # TODO return 的一致性
-            "loss": grpo_loss,
-            "reward": rewards.mean(),
-            "policy_loss": grpo_loss,
-            "entropy": entropy.mean(),
-            "pred_traj": actions["pred_traj"],
-            }
-
-        elif self.training and not self.grpo:
-            raise NotImplementedError
-
-        # -------------------------------------------------
-        # Eval
-        # -------------------------------------------------         
-        return actions  # TODO 检查跟原输出的一致性
+        pass
 
 
     @staticmethod
