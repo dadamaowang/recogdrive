@@ -108,25 +108,9 @@ class NegDriveAgent(AbstractAgent):
         self.freeze_diffusion = freeze_diffusion
         self.dit_type = dit_type
 
-        print("DIFFUSION 总体检查：参数")
-
-        diff_ckpt = torch.load(self.diff_path, map_location="cpu", weights_only=False)
-
-        print(type(diff_ckpt))
-        print(diff_ckpt.keys())
-
-        state_dict = diff_ckpt["state_dict"]
-        keys = list(state_dict.keys())
-
-        print(f"Total parameters: {len(keys)}")
-        print("\nFirst 20 keys:")
-        for k in keys[:20]:
-            print(f"  {k}")
-
-
-        # self.metric_cache_path = metric_cache_path TODO 
-
         if self.freeze_diffusion:
+            # TODO add prepare_action_head function 
+
             input_dim = 1536 if vlm_size == "large" else 384
             cfg = make_diffusion_planner_config(   
                     self.dit_type, 
@@ -137,12 +121,23 @@ class NegDriveAgent(AbstractAgent):
                     sampling_method=sampling_method
                     )
             self.action_head =  NegDriveDiffusionPlanner(cfg).to(self.device)
-
             diff_ckpt = torch.load(self.diff_path, map_location="cpu", weights_only=False)
+            state_dict = diff_ckpt["state_dict"]
 
+            # strip "agent.action_head" prefix
+            prefix = "agent.action_head."
+            cleaned_state_dict = {
+                k[len(prefix):]: v
+                for k, v in state_dict.items()
+                if k.startswith(prefix)
+            }
+            missing, unexpected = self.action_head.load_state_dict(
+                cleaned_state_dict, strict=True
+            )
 
-
-            
+            assert not missing,    f"Missing keys in diffusion planner: {missing}"
+            assert not unexpected, f"Unexpected keys in diffusion planner: {unexpected}"
+            print(f"Diffusion planner loaded successfully ({len(cleaned_state_dict)} keys).")
 
             for p in self.action_head.parameters():
                 p.requires_grad = False
@@ -153,6 +148,10 @@ class NegDriveAgent(AbstractAgent):
         # self.checkpoint_path = diff_checkpoint_path  # TODO
         # # if checkpoint_path: 
         # #     self._load_planner_checkpoint(checkpoint_path)  # TODO
+
+
+        # self.metric_cache_path = metric_cache_path TODO 
+
 
         # # -----------------------
         # # GRPO / RL parameters
@@ -323,21 +322,28 @@ class NegDriveAgent(AbstractAgent):
                                        params=self.vlm.parameters())    
         # TODO this is for full VLM tuning,
         # for LoRA , adapter ?  
-        
-        if self.grpo:
-            scheduler = WarmupCosLR(optimizer=optimizer,    # TODO 这个是啥东西
+
+        scheduler = WarmupCosLR(optimizer=optimizer,  
                                     lr=self._lr, 
                                     min_lr=0.0, 
                                     epochs=10, 
                                     warmup_epochs=0
-                                    )
-        else:
-            raise NotImplementedError
-            # scheduler = WarmupCosLR(optimizer=optimizer,    # TODO 另外的
-            #                         lr=self._lr, 
-            #                         min_lr=1e-6, 
-            #                         epochs=200, 
-            #                         warmup_epochs=3)
+                                    )       
+        
+        # if self.grpo:
+        #     scheduler = WarmupCosLR(optimizer=optimizer,    # TODO 这个是啥东西
+        #                             lr=self._lr, 
+        #                             min_lr=0.0, 
+        #                             epochs=10, 
+        #                             warmup_epochs=0
+        #                             )
+        # else:
+        #     raise NotImplementedError
+        #     # scheduler = WarmupCosLR(optimizer=optimizer,    # TODO 另外的
+        #     #                         lr=self._lr, 
+        #     #                         min_lr=1e-6, 
+        #     #                         epochs=200, 
+        #     #                         warmup_epochs=3)
             
         return {'optimizer': optimizer, 'lr_scheduler': scheduler}
 
