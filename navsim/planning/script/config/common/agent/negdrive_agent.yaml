@@ -13,7 +13,7 @@ vlm_path: ''
 vlm_type: 'internvl'
 diff_path: ''
 dit_type: 'small'
-sampling_method: 'ddim'
+diff_sampling_method: 'ddim'
 # cache_mode: False
 # cache_hidden_state: True
 # metric_cache_path: ''

@@ -55,7 +55,7 @@ class NegDriveAgent(AbstractAgent):
 
         # ========== DIFFUSION (DECODER) ==========
         dit_type: str = "small",
-        sampling_method: str = "ddim",
+        diff_sampling_method: str = "ddim",
         freeze_diffusion: bool = True,           
         diff_path: Optional[str] = None,
 
@@ -107,20 +107,21 @@ class NegDriveAgent(AbstractAgent):
         self.diff_path = diff_path
         self.freeze_diffusion = freeze_diffusion
         self.dit_type = dit_type
+        self.diff_sampling_method = diff_sampling_method
+
+        input_embedding_dim = 384 if self.dit_type == "small" else 1536
+        cfg = make_diffusion_planner_config(
+            self.dit_type,
+            action_dim=3, 
+            action_horizon=8,
+            grpo=False,
+            input_embedding_dim=input_embedding_dim,
+            sampling_method=self.diff_sampling_method
+        )
+        cfg.vlm_size = self.vlm_size 
+        self.action_head =  NegDriveDiffusionPlanner(cfg).to(self.device)
 
         if self.freeze_diffusion:
-            # TODO add prepare_action_head function 
-
-            input_dim = 1536 if vlm_size == "large" else 384
-            cfg = make_diffusion_planner_config(   
-                    self.dit_type, 
-                    action_dim=3, 
-                    action_horizon=8, 
-                    grpo=False, 
-                    input_embedding_dim=input_dim,
-                    sampling_method=sampling_method
-                    )
-            self.action_head =  NegDriveDiffusionPlanner(cfg).to(self.device)
             diff_ckpt = torch.load(self.diff_path, map_location="cpu", weights_only=False)
             state_dict = diff_ckpt["state_dict"]
 
@@ -132,15 +133,18 @@ class NegDriveAgent(AbstractAgent):
                 if k.startswith(prefix)
             }
             missing, unexpected = self.action_head.load_state_dict(
-                cleaned_state_dict, strict=True
+                cleaned_state_dict, strict=False
             )
+            real_missing = [k for k in missing if not k.startswith("old_policy")]
+            real_unexpected = [k for k in unexpected if not k.startswith("old_policy")]
 
-            assert not missing,    f"Missing keys in diffusion planner: {missing}"
-            assert not unexpected, f"Unexpected keys in diffusion planner: {unexpected}"
+            assert not real_missing,    f"Missing keys in diffusion planner: {missing}"
+            assert not real_unexpected, f"Unexpected keys in diffusion planner: {unexpected}"
             print(f"Diffusion planner loaded successfully ({len(cleaned_state_dict)} keys).")
 
             for p in self.action_head.parameters():
                 p.requires_grad = False
+            
         else:
             raise NotImplementedError
 

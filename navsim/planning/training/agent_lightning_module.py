@@ -384,11 +384,6 @@ class AgentLightningVLMRL(pl.LightningModule):
                     )
                     last_hidden_states = fwd_output.hidden_states[-1]
                     all_last_hidden_states.append(last_hidden_states)
-
-                    print('LAST HIDDEN STATES:')
-                    print(last_hidden_states)
-
-
                     del fwd_output
 
                     # extract and prepare planner input
@@ -410,12 +405,27 @@ class AgentLightningVLMRL(pl.LightningModule):
                         last_hidden_states.to(diff_dtype),
                         diff_input
                     )
-                    print('输出动作检查')
-                    print(actions)
-                    
+
+                    """
+                    {'pred_traj': tensor([[[ 9.6389e-01,  7.4900e-02,  5.8308e-03],
+                    [ 1.8365e+00,  2.7319e-02,  8.8125e-03],
+                    [ 2.5693e+00,  2.9800e-02,  6.6231e-03],
+                    [ 2.9645e+00,  3.3642e-02,  6.5169e-03],
+                    [ 3.2720e+00, -2.1763e-03,  7.9466e-03],
+                    [ 3.4912e+00,  2.3960e-02,  1.1656e-03],
+                    [ 4.1012e+00, -3.6682e-02,  6.9115e-03],
+                    [ 3.6042e+00, -7.6752e-03,  1.7909e-03]],
+
+                    [[ 1.2922e+00,  1.6138e-01,  5.1677e-02],
+                    [ 2.7716e+00,  1.2371e-01,  8.4622e-02],
+                    [ 2.6529e+00,  1.1328e-01,  1.0839e-01],
+                    [ 2.6180e+00,  1.7940e-01,  1.1723e-01],
+                    [ 2.7896e+00,  1.7507e-01,  1.3273e-01],
+                    [ 3.1623e+00,  1.4215e-01,  1.3982e-01],
+                    [ 3.7028e+00,  2.4421e-01,  1.5477e-01],
+                    [ 3.5862e+00,  2.0090e-01,  1.6826e-01]]], device='cuda:0')}
+                    """
                     all_actions.append(actions)
-
-
 
                     #  Compute log prob of this generation (old policy)
                     old_log_probs = compute_response_logprobs(
@@ -423,8 +433,10 @@ class AgentLightningVLMRL(pl.LightningModule):
                         pixel_values=pixel_values_cat,
                         generation_output=gen_output
                     )
-                    
                     all_policy_log_probs_old.append(old_log_probs)
+
+                    print("成功，检查 log prob")
+                    print(old_log_probs)
 
                     # Score
                     # TODO 01 compatible 
