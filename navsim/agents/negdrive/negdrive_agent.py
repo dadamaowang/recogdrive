@@ -82,6 +82,8 @@ class NegDriveAgent(AbstractAgent):
         self.cache_mode = cache_mode
         self.cache_hidden_state = cache_hidden_state
 
+        self.metric_cache_path = metric_cache_path
+
         # -----------------------
         # VLM (policy network)
         # -----------------------
@@ -119,6 +121,8 @@ class NegDriveAgent(AbstractAgent):
             sampling_method=self.diff_sampling_method
         )
         cfg.vlm_size = self.vlm_size 
+        cfg.metric_cache_path = self.metric_cache_path
+
         self.action_head =  NegDriveDiffusionPlanner(cfg).to(self.device)
 
         if self.freeze_diffusion:

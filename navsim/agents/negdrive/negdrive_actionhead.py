@@ -113,6 +113,13 @@ class NegDriveDiffusionPlannerConfig(PretrainedConfig):
     ddpm_cfg: DDPMConfig = field(default_factory=DDPMConfig)
     ddim_cfg: DDIMConfig = field(default_factory=DDIMConfig)
 
+    """NOTE
+    For reward 
+    """
+    metric_cache_path: str = "/path/to/metric_cache_train"
+    scorer_config: PDMScorerConfig = field(default_factory=lambda: PDMScorerConfig(
+        progress_weight=10.0, ttc_weight=5.0, comfortable_weight=2.0
+    ))
 
 
 class NegDriveDiffusionPlanner(nn.Module):

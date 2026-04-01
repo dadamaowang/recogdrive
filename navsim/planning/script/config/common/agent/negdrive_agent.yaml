@@ -16,7 +16,7 @@ dit_type: 'small'
 diff_sampling_method: 'ddim'
 # cache_mode: False
 # cache_hidden_state: True
-# metric_cache_path: ''
+metric_cache_path: ''
 vlm_size: 'small'
 # grpo: False
 # lr: 1e-4
