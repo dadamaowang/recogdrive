@@ -188,6 +188,10 @@ class NegDriveDiffusionPlanner(nn.Module):
         if config.grpo:
             self._init_grpo(config.grpo_cfg)
 
+        # for reward computing
+        self.metric_cache_loader = MetricCacheLoader(Path(config.metric_cache_path))
+
+
     def _init_flow_sampler(self, cfg: FlowConfig):
         """Initializes components required for Flow Matching."""
         self.beta_dist = Beta(cfg.noise_beta_alpha, cfg.noise_beta_beta)

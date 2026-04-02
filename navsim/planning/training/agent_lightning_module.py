@@ -435,12 +435,11 @@ class AgentLightningVLMRL(pl.LightningModule):
                     )
                     all_policy_log_probs_old.append(old_log_probs)
 
-                    print("成功，检查 log prob")
-                    print(old_log_probs)
-
                     # Score
                     # TODO 01 compatible 
                     # 02 change into binary reward 
+
+                    grpo_return = self.agent.forward_grpo()
                     
                     
                     

@@ -838,8 +838,7 @@ class ReCogDriveDiffusionPlanner(nn.Module):
         chains, trajs = self.sample_chain(
             vl_features_rep, his_traj_rep, status_feature_rep, deterministic=False
         )
-
-        # Next: 搞 metric cache 
+ 
         tokens_rep = [tok for tok in tokens_list for _ in range(G)]
         unique_tokens = set(tokens_list)
         metric_cache = {}
