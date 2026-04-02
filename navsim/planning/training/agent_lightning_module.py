@@ -407,6 +407,7 @@ class AgentLightningVLMRL(pl.LightningModule):
                     )
 
                     """
+                    BatchFeature(data={"pred_traj": final_actions})
                     {'pred_traj': tensor([[[ 9.6389e-01,  7.4900e-02,  5.8308e-03],
                     [ 1.8365e+00,  2.7319e-02,  8.8125e-03],
                     [ 2.5693e+00,  2.9800e-02,  6.6231e-03],
@@ -439,7 +440,9 @@ class AgentLightningVLMRL(pl.LightningModule):
                     # TODO 01 compatible 
                     # 02 change into binary reward 
 
-                    grpo_return = self.agent.forward_grpo()
+                    self.agent.forward_grpo(
+                        tokens_list=tokens_list
+                                            )
                     
                     
                     

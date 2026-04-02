@@ -603,6 +603,40 @@ class NegDriveDiffusionPlanner(nn.Module):
         final_actions = self.denorm_odo(current_actions)
 
         return BatchFeature(data={"pred_traj": final_actions})
+    
+
+    def get_grpo_reward(self,
+                        actions,        # BatchFeature(data={"pred_traj"})
+                        tokens_list,
+
+
+                        ):
+        """
+        Docstring for get_grpo_reward
+        
+        
+        """
+
+        final_actions.detach()
+
+        unique_tokens = set(tokens_list)
+        metric_cache = {}
+        for token in unique_tokens:
+            path = self.metric_cache_loader.metric_cache_paths[token]
+            with lzma.open(path, 'rb') as f:
+                metric_cache[token] = pickle.load(f)
+
+
+
+        print("成功")
+
+
+
+        # rewards = self.reward_fn(trajs, tokens_rep, metric_cache)
+
+
+
+
 
     def sample_chain(
         self,
