@@ -440,9 +440,10 @@ class AgentLightningVLMRL(pl.LightningModule):
                     # TODO 01 compatible 
                     # 02 change into binary reward 
 
-                    self.agent.forward_grpo(
-                        tokens_list=tokens_list
-                                            )
+                    self.agent.action_head.get_grpo_reward(
+                        actions,
+                        tokens_list=tokens_list,
+                        )
                     
                     
                     
