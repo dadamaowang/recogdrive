@@ -620,6 +620,26 @@ class PDMResults:
 
     score: float
 
+
+@dataclass
+class PDMResults_NegDrive:
+    """Binary Reward based on PDM results for training negdrive agent."""
+
+    no_at_fault_collisions: float
+    drivable_area_compliance: float
+
+    ego_progress: float
+    time_to_collision_within_bound: float
+    comfort: float
+    driving_direction_compliance: float
+
+    score: float
+
+    safe_score: float
+    reward: float
+
+
+
 @dataclass
 class PDMResults_safe:
     """Helper dataclass to record PDM results."""

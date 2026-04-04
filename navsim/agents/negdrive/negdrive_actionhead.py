@@ -190,6 +190,9 @@ class NegDriveDiffusionPlanner(nn.Module):
 
         # for reward computing
         self.metric_cache_loader = MetricCacheLoader(Path(config.metric_cache_path))
+        proposal_sampling = TrajectorySampling(time_horizon=4, interval_length=0.1)
+        self.simulator = PDMSimulator(proposal_sampling)
+        self.train_scorer = PDMScorer(proposal_sampling, config.scorer_config)
 
 
     def _init_flow_sampler(self, cfg: FlowConfig):
@@ -608,8 +611,6 @@ class NegDriveDiffusionPlanner(nn.Module):
     def get_grpo_reward(self,
                         actions,        # BatchFeature(data={"pred_traj"})
                         tokens_list,
-
-
                         ):
         """
         Docstring for get_grpo_reward
@@ -630,17 +631,15 @@ class NegDriveDiffusionPlanner(nn.Module):
                 metric_cache[token] = pickle.load(f)
 
 
-        reward = self.reward_pdm(pred_traj=final_actions,
+        rewards = self.reward_pdm(pred_traj=final_actions,
                                  tokens_list=unique_tokens,
                                  cache_dict=metric_cache)
     
-
+        print("调试01")
         print("奖励：")
-        print(reward)
+        print(rewards)
 
-
-
-        # rewards = self.reward_fn(trajs, tokens_rep, metric_cache)
+        return rewards
 
 
     def reward_pdm(

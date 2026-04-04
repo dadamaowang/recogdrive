@@ -436,15 +436,42 @@ class AgentLightningVLMRL(pl.LightningModule):
                     )
                     all_policy_log_probs_old.append(old_log_probs)
 
-                    # Score
-                    # TODO 01 compatible 
-                    # 02 change into binary reward 
-
-                    self.agent.action_head.get_grpo_reward(
+                    # get rewards
+                    reward = self.agent.action_head.get_grpo_reward(
                         actions,
                         tokens_list=tokens_list,
-                        )
-                    
+                    )
+                    all_rewards.append(reward)
+
+                    print("调试2")
+                    print("奖励的形状")
+                    print(reward.shape)
+                    # 应该只是一个 scalar
+
+
+        # ---------------------------- Compute Advantages ------------------------------
+        rewards_tensor = torch.stack(all_rewards, dim=1).float()  # [B, G]
+
+        print("调试 3")
+        print("奖励 tensor 的形状")
+        print(rewards_tensor)
+
+        # Normalize within each batch item's G group
+        mean_r = rewards_tensor.mean(dim=1, keepdim=True)
+        std_r = rewards_tensor.std(dim=1, keepdim=True) + 1e-8
+        advantages = (rewards_tensor - mean_r) / std_r
+
+        # Clip advantage outliers (prevents extreme gradient steps)
+        adv_flat = advantages.view(-1)                             # [B*G]
+        adv_min  = torch.quantile(adv_flat, 0.05)
+        adv_max  = torch.quantile(adv_flat, 0.95)
+        advantages = advantages.clamp(min=adv_min, max=adv_max)   # [B, G]
+
+        # Log reward stats
+        self.log(f"{logging_prefix}/mean_reward", rewards_tensor.mean(),
+                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log(f"{logging_prefix}/reward_std", rewards_tensor.std(),
+                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
                     
                     
 
