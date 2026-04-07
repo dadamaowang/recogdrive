@@ -634,10 +634,6 @@ class NegDriveDiffusionPlanner(nn.Module):
         rewards = self.reward_pdm(pred_traj=final_actions,
                                  tokens_list=unique_tokens,
                                  cache_dict=metric_cache)
-    
-        print("调试01")
-        print("奖励：")
-        print(rewards)
 
         return rewards
 

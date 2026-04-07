@@ -267,6 +267,156 @@ def compute_response_logprobs(
     return mean_log_probs
 
 
+def compute_response_logprobs_tokens(
+    model: torch.nn.Module,
+    pixel_values: torch.Tensor,
+    generation_output,              # GenerationOutput
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Returns per-token log probs AND eos_mask for response tokens only.
+
+    Returns:
+        token_log_probs: [B, ResponseLen]  per-token log probs
+        eos_mask:        [B, ResponseLen]  1=real token, 0=padding
+    """
+    full_ids       = generation_output.full_ids
+    attention_mask = generation_output.attention_mask
+    response_start = generation_output.response_start_idx
+
+    B, S   = full_ids.shape
+    device = full_ids.device
+
+    num_patches = pixel_values.shape[0]
+    image_flags = torch.ones(num_patches, dtype=torch.long, device=device)
+
+    outputs = model(
+        pixel_values=pixel_values,
+        input_ids=full_ids,
+        attention_mask=attention_mask,
+        image_flags=image_flags,
+        output_hidden_states=False,
+        return_dict=True,
+    )
+    logits = outputs.logits     # [B, S, V]
+
+    # Causal shift
+    shift_logits = logits[:, :-1, :]        # [B, S-1, V]
+    shift_ids    = full_ids[:, 1:]          # [B, S-1]
+    shift_mask   = attention_mask[:, 1:]    # [B, S-1]
+
+    log_probs_all   = F.log_softmax(shift_logits, dim=-1)   # [B, S-1, V]
+    token_log_probs = log_probs_all.gather(
+        dim=-1,
+        index=shift_ids.unsqueeze(-1)
+    ).squeeze(-1)                           # [B, S-1]
+
+    # Response-only mask
+    response_mask = shift_mask.clone()
+    response_mask[:, :response_start - 1] = 0   # zero out prompt
+
+    # Extract response portion only
+    response_log_probs = token_log_probs[:, response_start - 1:]  # [B, ResponseLen]
+    eos_mask           = response_mask[:, response_start - 1:]     # [B, ResponseLen]
+
+    return response_log_probs, eos_mask
+
+
+
+
+
+
+def compute_negdrive_advantages(
+        policy_log_probs_tokens: torch.Tensor,
+        rewards: torch.Tensor,
+        eos_mask: torch.Tensor,
+        gamma: float = 1.0, 
+        mode: str = "nsr",
+        positive_advantage_weight: float = 0.1
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+    """ TODO 核心
+    Compute token-level advantages for NSR/PSR/weighted-REINFORCE.
+    Adapted from veRL's compute_psr_nsr_outcome_advantage for your
+    sequence-level binary reward setting.
+
+    Args:
+        policy_log_probs_tokens: [B, ResponseLen] per-token log probs
+        rewards:                 [B] scalar reward per sequence {-1.0, 1.0}
+        eos_mask:                [B, ResponseLen] 1=real response token, 0=pad
+        gamma:                   discount factor for return computation
+                                 1.0 = flat reward across all tokens (recommended)
+                                 <1.0 = earlier tokens get less credit
+        mode:                    "negative" → learn from failures only (your case)
+                                 "positive" → learn from successes only
+                                 "weighted" → learn from both
+        positive_advantage_weight: how much to weight positive samples in
+                                   "weighted" mode. Keep small (0.1) so
+                                   negative samples dominate.
+
+    Returns:
+        advantages: [B, ResponseLen] token-level advantages
+        returns:    [B, ResponseLen] discounted returns
+    """    
+    with torch.no_grad():
+        B, T = eos_mask.shape
+
+        # ── Step 1: Broadcast scalar reward to token level ────────────
+        # Each token in the response gets the sequence's reward
+        # Shape: [B] → [B, T]
+        token_level_rewards = rewards.unsqueeze(-1).expance(B, T) * eos_mask
+        # reward only applied at real response tokens, 0 at padding
+
+        # ── Step 2: Compute discounted returns ────────────────────────
+        # returns[t] = sum_{k=t}^{T} gamma^(k-t) * reward[k]
+        # With gamma=1.0 and outcome reward: returns[t] = reward for all t
+        returns = torch.zeros_like(token_level_rewards)    # [B, T]
+        running_return = torch.zeros(B, device=rewards.device, dtype=rewards.dtype)
+        for t in reversed(range(T)):
+            running_return = token_level_rewards[:, t] + gamma * running_return
+            returns[:, t] = running_return
+            # Reset running return to 0 after EOS token
+            running_return = running_return * eos_mask[:, t]
+
+        # ── Step 3: Identify correct and incorrect sequences ──────────
+        correct_idx   = (rewards == 1.0)    # [B] bool — safe trajectories
+        incorrect_idx = (rewards == -1.0)   # [B] bool — unsafe trajectories
+
+
+        # ── Step 4: Compute advantages based on mode ──────────────────
+        if mode == "nsr":
+            # Only penalize failures — push log_prob DOWN for unsafe text
+            # correct:   advantage ≈ 0     → no update
+            # incorrect: advantage = -1    → penalize
+            advantages = torch.zeros_like(returns)              # [B, T]
+            advantages[incorrect_idx] = returns[incorrect_idx] - 1
+
+        elif mode == "psr":
+            # Only reward successes — push log_prob UP for safe text
+            # correct:   advantage = +1    → reward
+            # incorrect: advantage ≈ 0     → no update
+            advantages = torch.zeros_like(returns)
+            advantages[correct_idx] = returns[correct_idx]
+
+        elif mode == "weighted":
+            # Learn from both, but weight positives less
+            # correct:   advantage = returns * weight  (dampened positive)
+            # incorrect: advantage = returns - 1       (full negative)
+            advantages = returns.clone()
+            advantages[correct_idx]   *= positive_advantage_weight
+            advantages[incorrect_idx] -= 1
+
+        else:
+            raise ValueError(
+                f"Unknown mode: '{mode}'. "
+                "Choose 'negative', 'positive', or 'weighted'."
+            )
+
+        # ── Step 5: Apply EOS mask ────────────────────────────────────
+        # Zero out padding positions
+        advantages = advantages * eos_mask                      # [B, T]  
+    
+    return advantages, returns
+
+
 
 class AgentLightningVLMRL(pl.LightningModule):
     """Pytorch lightning wrapper for learnable vlm recogdrive agent."""
@@ -280,6 +430,8 @@ class AgentLightningVLMRL(pl.LightningModule):
         self.agent = agent
 
         self.G = 2  # TODO setting
+
+        self.automatic_optimization = False
 
 
 
@@ -356,13 +508,22 @@ class AgentLightningVLMRL(pl.LightningModule):
         # Run Diffusion Planner 
         # Score PDM
         # -------------------------------------------------------------------
-        all_gen_output = []
-        all_last_hidden_states = []
-        all_actions = []
-        all_policy_log_probs_old = []   # [G, B] - log probs at generation time 
+        all_gen_output = [] 
         all_rewards = []    # [G, B] - PDM scores 
-
         with torch.no_grad():
+
+            # extract and prepare planner input
+            status_feature = features["status_feature"].cuda()
+            if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
+            history_trajectory_reshaped = history_trajectory.view(history_trajectory.size(0), -1)
+            state_input = torch.cat([status_feature, history_trajectory_reshaped], dim=1)
+            diff_dtype = next(self.agent.action_head.parameters()).dtype
+            diff_input = BatchFeature({
+                    "state": state_input.to(diff_dtype),
+                    "his_traj": history_trajectory_reshaped.to(diff_dtype),
+                    "status_feature": status_feature.to(diff_dtype)
+                }
+            )
             
             for g in range(self.G):
 
@@ -383,28 +544,15 @@ class AgentLightningVLMRL(pl.LightningModule):
                         gen_output.attention_mask
                     )
                     last_hidden_states = fwd_output.hidden_states[-1]
-                    all_last_hidden_states.append(last_hidden_states)
                     del fwd_output
-
-                    # extract and prepare planner input
-                    status_feature = features["status_feature"].cuda()
-                    if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
-                    if last_hidden_states.ndim == 2: last_hidden_states = last_hidden_states.unsqueeze(0)
-                    history_trajectory_reshaped = history_trajectory.view(history_trajectory.size(0), -1)
-                    state_input = torch.cat([status_feature, history_trajectory_reshaped], dim=1)
-                    diff_dtype = next(self.agent.action_head.parameters()).dtype
-                    diff_input = BatchFeature({
-                            "state": state_input.to(diff_dtype),
-                            "his_traj": history_trajectory_reshaped.to(diff_dtype),
-                            "status_feature": status_feature.to(diff_dtype)
-                        }
-                    )
+                    if last_hidden_states.ndim == 2: 
+                        last_hidden_states = last_hidden_states.unsqueeze(0)
 
                     # get actions from planner 
                     actions = self.agent.action_head.get_action(
                         last_hidden_states.to(diff_dtype),
                         diff_input
-                    )
+                    )   # [B, T, 3]
 
                     """
                     BatchFeature(data={"pred_traj": final_actions})
@@ -426,79 +574,126 @@ class AgentLightningVLMRL(pl.LightningModule):
                     [ 3.7028e+00,  2.4421e-01,  1.5477e-01],
                     [ 3.5862e+00,  2.0090e-01,  1.6826e-01]]], device='cuda:0')}
                     """
-                    all_actions.append(actions)
 
-                    #  Compute log prob of this generation (old policy)
-                    old_log_probs = compute_response_logprobs(
-                        model = self.agent.vlm.model,
-                        pixel_values=pixel_values_cat,
-                        generation_output=gen_output
-                    )
-                    all_policy_log_probs_old.append(old_log_probs)
+                    # #  Compute log prob of this generation (old policy)
+                    # old_log_probs = compute_response_logprobs(
+                    #     model = self.agent.vlm.model,
+                    #     pixel_values=pixel_values_cat,
+                    #     generation_output=gen_output
+                    # )
+                    # all_policy_log_probs_old.append(old_log_probs)
 
                     # get rewards
                     reward = self.agent.action_head.get_grpo_reward(
                         actions,
                         tokens_list=tokens_list,
-                    )
+                    )   # [B]
                     all_rewards.append(reward)
 
-                    print("调试2")
-                    print("奖励的形状")
-                    print(reward.shape)
-                    # 应该只是一个 scalar
-
-
         # ---------------------------- Compute Advantages ------------------------------
+        #   Learn only from failure 
+        # -------------------------------
         rewards_tensor = torch.stack(all_rewards, dim=1).float()  # [B, G]
 
-        print("调试 3")
-        print("奖励 tensor 的形状")
-        print(rewards_tensor)
+        # build mask: True where reward == -1 (failure)
+        failure_mask = (rewards_tensor == -1)   # [B, G] bool
 
-        # Normalize within each batch item's G group
-        mean_r = rewards_tensor.mean(dim=1, keepdim=True)
-        std_r = rewards_tensor.std(dim=1, keepdim=True) + 1e-8
-        advantages = (rewards_tensor - mean_r) / std_r
+        # check if any failures exist in this batch
+        num_failures = failure_mask.sum().item()
 
-        # Clip advantage outliers (prevents extreme gradient steps)
-        adv_flat = advantages.view(-1)                             # [B*G]
-        adv_min  = torch.quantile(adv_flat, 0.05)
-        adv_max  = torch.quantile(adv_flat, 0.95)
-        advantages = advantages.clamp(min=adv_min, max=adv_max)   # [B, G]
-
-        # Log reward stats
+        # Log reward stats regardless
         self.log(f"{logging_prefix}/mean_reward", rewards_tensor.mean(),
-                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
-        self.log(f"{logging_prefix}/reward_std", rewards_tensor.std(),
-                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
-                    
-                    
+                on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log(f"{logging_prefix}/num_failures", float(num_failures),
+                on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log(f"{logging_prefix}/failure_rate",
+                failure_mask.float().mean(),
+                on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
+        # If no failures, skip optimizer step — nothing to learn from
+        if num_failures == 0:
+            print("没有负样本")
+            return torch.tensor(0.0, device=self.device, requires_grad=True)
 
+        # ─────────────────────────────────────────────────────────────────
+        # PHASE 3: OPTIMIZE VLM (gradients ON)
+        # ─────────────────────────────────────────────────────────────────
+        # For each G rollout:
+        #   1. Recompute per-token log probs WITH gradients
+        #   2. Compute NSR token-level advantages from reward
+        #   3. Loss = -(advantage * token_log_prob).sum() for failures only
+        # ─────────────────────────────────────────────────────────────────
+        total_loss    = torch.tensor(0.0, device=self.device)
+        total_pg_loss = 0.0
+        num_rollouts_with_failures = 0
 
+        for g in range(self.G):
+            rewards_g      = rewards_tensor[:, g]       # [B] {-1.0, 1.0}
+            failure_mask_g = failure_mask[:, g]         # [B] bool
+            gen_output_g   = all_gen_output[g]
 
-  
+            # Skip this rollout if no failures — no gradient needed
+            if not failure_mask_g.any():
+                continue
 
-        loss = torch.tensor(0.0, requires_grad=True, device=self.device)
-        return loss
+            num_rollouts_with_failures += 1
 
-        # if logging_prefix == 'train':
-        #     predictions = self.agent.compute_loss(features, targets, prediction)
+            # ── Per-token log probs WITH gradients ───────────────────────
+            # This is where gradient flows back into VLM LoRA weights
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                token_log_probs, eos_mask = compute_response_logprobs_tokens(
+                    model=self.agent.vlm.model,
+                    pixel_values=pixel_values_cat,
+                    generation_output=gen_output_g,
+                )
+            # token_log_probs: [B, ResponseLen]  ,has grad_fn 
+            # eos_mask:        [B, ResponseLen]  1=real token, 0=pad
 
-        #     loss = predictions.loss
-        #     reward = predictions.reward
-        #     policy_loss = predictions.policy_loss
-        #     bc_loss = predictions.bc_loss
-        #     self.log(f"{logging_prefix}/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
-        #     self.log(f"{logging_prefix}/reward", reward, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
-        #     self.log(f"{logging_prefix}/policy_loss", policy_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
-        #     self.log(f"{logging_prefix}/bc_loss", bc_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
-        # else:
-        #     prediction = self.agent.forward(features,targets)
-        #     loss = self.agent.compute_loss(features, targets, prediction)
-        #     self.log(f"{logging_prefix}/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
-        # return loss
+            # ── NSR token-level advantages (no grad) ─────────────────────
+            # mode="negative": advantage = -1 for failures, 0 for successes
+            # Each token in the response gets the sequence's scalar reward
+            advantages, returns = compute_negdrive_advantages(
+                policy_log_probs_tokens=token_log_probs.detach(),
+                rewards=rewards_g,
+                eos_mask=eos_mask.detach(),
+                gamma=1.0,              # no discount — flat reward across tokens
+                mode="nsr",        # learn from failures only
+            )
+            # advantages: [B, ResponseLen]
+            # advantages[failure_rows] = -1 at real tokens, 0 at padding
+            # advantages[success_rows] = 0  everywhere
+
+            # ── Policy gradient loss ──────────────────────────────────────
+            # loss = -(advantage * log_prob) summed over tokens, mean over batch
+            #
+            # For failure samples:
+            #   advantage = -1  →  loss = -(-1 * log_prob) = log_prob
+            #   minimizing loss pushes log_prob DOWN ✅ (avoid unsafe text)
+            #
+            # For success samples:
+            #   advantage = 0   →  loss = 0
+            #   no gradient contribution ✅
+            #
+            # Normalize by number of real response tokens (not sequence length)
+            # to keep loss scale stable across different response lengths
+            num_real_tokens = eos_mask.sum(dim=-1).clamp(min=1)    # [B]
+            pg_loss = -(advantages * token_log_probs).sum(dim=-1)  # [B]
+            pg_loss = pg_loss / num_real_tokens                     # [B] normalize
+            pg_loss = pg_loss.mean()                                # scalar
+
+            total_loss    = total_loss + pg_loss / self.G
+            total_pg_loss += pg_loss.item() / self.G
+
+        # ── Logging ───────────────────────────────────────────────────────
+        self.log(f"{logging_prefix}/pg_loss", total_pg_loss,
+                on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log(f"{logging_prefix}/total_loss", total_loss.item(),
+                on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log(f"{logging_prefix}/rollouts_with_failures",
+                float(num_rollouts_with_failures),
+                on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+
+        return total_loss
 
     
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
@@ -512,17 +707,41 @@ class AgentLightningVLMRL(pl.LightningModule):
         }
         checkpoint['state_dict'] = filtered_sd
 
+
     def training_step(self, 
                       batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], 
                       batch_idx: int) -> Tensor:
         """
         Step called on training samples
+
+        手动，因为 num_failure = 0 时无梯度 TODO
+
         :param batch: tuple of dictionaries for feature and target tensors (batched)
         :param batch_idx: index of batch (ignored)
         :return: scalar loss
         """
-        return self._step(batch, "train")
-        
+        # return self._step(batch, "train")
+
+
+    
+        opt = self.optimizers()
+        sch = self.lr_schedulers()
+
+        loss = self._step(batch, "train")
+
+        if loss is None:
+            return  # skip entirely, no optimizer step
+
+        opt.zero_grad()
+        self.manual_backward(loss)
+        # Gradient clipping (important for RL stability)
+        torch.nn.utils.clip_grad_norm_(
+            self.agent.vlm.parameters(), max_norm=1.0
+        )
+        opt.step()
+        sch.step()
+
+
 
     def validation_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int):
         # """
