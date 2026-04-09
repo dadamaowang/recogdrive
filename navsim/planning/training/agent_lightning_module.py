@@ -734,10 +734,10 @@ class AgentLightningVLMRL(pl.LightningModule):
 
         opt.zero_grad()
         self.manual_backward(loss)
-        # Gradient clipping (important for RL stability)
-        torch.nn.utils.clip_grad_norm_(
-            self.agent.vlm.parameters(), max_norm=1.0
-        )
+        # # Gradient clipping (important for RL stability) 
+        # torch.nn.utils.clip_grad_norm_(
+        #     self.agent.vlm.parameters(), max_norm=1.0
+        # )
         opt.step()
         sch.step()
 

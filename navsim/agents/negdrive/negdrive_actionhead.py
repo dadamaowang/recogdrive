@@ -656,7 +656,15 @@ class NegDriveDiffusionPlanner(nn.Module):
                 future_sampling=self.simulator.proposal_sampling,
                 simulator=self.simulator,
                 scorer=self.train_scorer,
-            )
+            )   
+
+            print("奖励检查：")
+
+            print(pdm_result)
+
+
+
+
             rewards.append(asdict(pdm_result)["score"])
         return torch.tensor(rewards, device=pred_traj.device, dtype=pred_traj.dtype).detach()
 
