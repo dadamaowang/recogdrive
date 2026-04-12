@@ -662,10 +662,34 @@ class NegDriveDiffusionPlanner(nn.Module):
 
             print(pdm_result)
 
+            # TODO test 
+            # pdm_result.score = np.float(-1.0)
+
+            pdm_result.score = float(-1.0)
+
+            """
+            PDMResults(
+            no_at_fault_collisions=np.float64(1.0), 
+            drivable_area_compliance=np.float64(1.0), 
+            ego_progress=np.float64(0.9271724173075853), 
+            time_to_collision_within_bound=np.float64(1.0), 
+            comfort=np.float64(1.0), 
+            driving_direction_compliance=np.float64(1.0), 
+            score=np.float64(0.9571602454750502)
+            )
+            
+            
+            """
 
 
 
             rewards.append(asdict(pdm_result)["score"])
+
+
+
+
+
+
         return torch.tensor(rewards, device=pred_traj.device, dtype=pred_traj.dtype).detach()
 
 

@@ -613,7 +613,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         # If no failures, skip optimizer step — nothing to learn from
         if num_failures == 0:
             print("没有负样本")
-            return torch.tensor(0.0, device=self.device, requires_grad=True)
+            return self._zero_loss()
 
         # ─────────────────────────────────────────────────────────────────
         # PHASE 3: OPTIMIZE VLM (gradients ON)
@@ -623,6 +623,9 @@ class AgentLightningVLMRL(pl.LightningModule):
         #   2. Compute NSR token-level advantages from reward
         #   3. Loss = -(advantage * token_log_prob).sum() for failures only
         # ─────────────────────────────────────────────────────────────────
+
+        print("负样本优化检查")
+
         total_loss    = torch.tensor(0.0, device=self.device)
         total_pg_loss = 0.0
         num_rollouts_with_failures = 0
@@ -714,33 +717,39 @@ class AgentLightningVLMRL(pl.LightningModule):
         """
         Step called on training samples
 
-        手动，因为 num_failure = 0 时无梯度 TODO
 
         :param batch: tuple of dictionaries for feature and target tensors (batched)
         :param batch_idx: index of batch (ignored)
         :return: scalar loss
         """
-        # return self._step(batch, "train")
+        return self._step(batch, "train")
 
 
-    
-        opt = self.optimizers()
-        sch = self.lr_schedulers()
+    def _zero_loss(self) -> torch.Tensor:
+        """
+        Returns a zero loss that connected to VLM parameters.
+        Used when there are no failure samples in a batch.
 
-        loss = self._step(batch, "train")
+        This gives the AMP scaler valid inf checks to record,
+        while producing zero gradient - effectively a no-op update.
 
-        if loss is None:
-            return  # skip entirely, no optimizer step
+        How it works:
+            sum(param * 0) = 0  (scalar, connected to graph)
+            gradient = 0        (no actual update happens)
+        """
+        # # Pick one small LoRA parameter to connect to TODO 
+        # # We use next(iter()) to get just one parameter — cheap
+        # for name, param in self.agent.vlm.named_parameters():
+        #     if param.requires_grad and 'lora_A' in name:
+        #         return param.sum() * 0.0   # zero but connected to graph ✅
 
-        opt.zero_grad()
-        self.manual_backward(loss)
-        # # Gradient clipping (important for RL stability) 
-        # torch.nn.utils.clip_grad_norm_(
-        #     self.agent.vlm.parameters(), max_norm=1.0
-        # )
-        opt.step()
-        sch.step()
+        # Fallback: use first trainable parameter
+        for param in self.agent.vlm.parameters():
+            if param.requires_grad:
+                return param.sum() * 0.0
 
+        # Should never reach here
+        return torch.tensor(0.0, device=self.device, requires_grad=True)
 
 
     def validation_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int):
