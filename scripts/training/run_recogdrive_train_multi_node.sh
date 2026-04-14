@@ -7,6 +7,7 @@ TRAIN_TEST_SPLIT=navtrain
 export NCCL_IB_DISABLE=0
 export NCCL_P2P_DISABLE=0
 export NCCL_SHM_DISABLE=0
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 MASTER_PORT=${MASTER_PORT:-63669}
 PORT=${PORT:-63665}
@@ -38,6 +39,8 @@ torchrun \
     agent.dit_type="small" \
     agent.sampling_method="ddim" \
     trainer.params.max_epochs=200 \
+    trainer.params.accumulate_grad_batches=2 \
+    dataloader.params.batch_size=8 \
     experiment_name=training_internvl_agent_dit \
     train_test_split=$TRAIN_TEST_SPLIT \
     cache_path="/path/to/recogdrive_agent_cache_dir_train" \

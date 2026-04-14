@@ -1,4 +1,7 @@
 
+nvidia-smi
+
+
 export NAVSIM_EXP_ROOT="/UserData/xnq/navsim_workspace/exp"     # exp log 存放; cache_dataset 位置存放
 
 export NAVSIM_DEVKIT_ROOT="/root/recogdrive"
@@ -10,7 +13,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   # data
-EXP_NAME=debug_0412
+EXP_NAME=pre-exp_01_2b_small_data
 
 
 # --------

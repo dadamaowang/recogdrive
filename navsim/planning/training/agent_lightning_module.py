@@ -304,24 +304,35 @@ def compute_response_logprobs_tokens(
     shift_ids    = full_ids[:, 1:]          # [B, S-1]
     shift_mask   = attention_mask[:, 1:]    # [B, S-1]
 
-    log_probs_all   = F.log_softmax(shift_logits, dim=-1)   # [B, S-1, V]
+    # ── KEY FIX: slice to response positions BEFORE log_softmax ───────
+    # response_start - 1 because of causal shift
+    response_start_shifted = max(response_start - 1, 0)
+
+    # Only keep response portion — discard prompt logits entirely
+    response_logits = shift_logits[:, response_start_shifted:, :]  # [B, ResponseLen, V]
+    response_ids    = shift_ids[:,   response_start_shifted:]       # [B, ResponseLen]
+    response_mask   = shift_mask[:,  response_start_shifted:]       # [B, ResponseLen]
+
+    # Free full logits immediately — no longer needed
+    del logits, shift_logits, shift_ids, shift_mask
+    torch.cuda.empty_cache()
+
+
+    log_probs_all   = F.log_softmax(response_logits, dim=-1)   # [B, S-1, V]
     token_log_probs = log_probs_all.gather(
         dim=-1,
-        index=shift_ids.unsqueeze(-1)
+        index=response_ids.unsqueeze(-1)
     ).squeeze(-1)                           # [B, S-1]
 
-    # Response-only mask
-    response_mask = shift_mask.clone()
-    response_mask[:, :response_start - 1] = 0   # zero out prompt
+    # Free vocab-size tensor immediately
+    del log_probs_all, response_logits
+    torch.cuda.empty_cache()
 
-    # Extract response portion only
-    response_log_probs = token_log_probs[:, response_start - 1:]  # [B, ResponseLen]
-    eos_mask           = response_mask[:, response_start - 1:]     # [B, ResponseLen]
+    # Apply mask
+    eos_mask        = response_mask                                  # [B, ResponseLen]
+    token_log_probs = token_log_probs * eos_mask                    # [B, ResponseLen]
 
-    return response_log_probs, eos_mask
-
-
-
+    return token_log_probs, eos_mask
 
 
 
@@ -362,7 +373,7 @@ def compute_negdrive_advantages(
         # ── Step 1: Broadcast scalar reward to token level ────────────
         # Each token in the response gets the sequence's reward
         # Shape: [B] → [B, T]
-        token_level_rewards = rewards.unsqueeze(-1).expance(B, T) * eos_mask
+        token_level_rewards = rewards.unsqueeze(-1).expand(B, T) * eos_mask
         # reward only applied at real response tokens, 0 at padding
 
         # ── Step 2: Compute discounted returns ────────────────────────
@@ -429,7 +440,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         super().__init__()
         self.agent = agent
 
-        self.G = 2  # TODO setting
+        self.G = 1  # TODO setting
 
         self.automatic_optimization = False
 
@@ -545,6 +556,7 @@ class AgentLightningVLMRL(pl.LightningModule):
                     )
                     last_hidden_states = fwd_output.hidden_states[-1]
                     del fwd_output
+                    torch.cuda.empty_cache()
                     if last_hidden_states.ndim == 2: 
                         last_hidden_states = last_hidden_states.unsqueeze(0)
 
@@ -553,6 +565,8 @@ class AgentLightningVLMRL(pl.LightningModule):
                         last_hidden_states.to(diff_dtype),
                         diff_input
                     )   # [B, T, 3]
+                    del last_hidden_states
+                    torch.cuda.empty_cache()
 
                     """
                     BatchFeature(data={"pred_traj": final_actions})
@@ -594,6 +608,8 @@ class AgentLightningVLMRL(pl.LightningModule):
         #   Learn only from failure 
         # -------------------------------
         rewards_tensor = torch.stack(all_rewards, dim=1).float()  # [B, G]
+        del all_rewards
+        torch.cuda.empty_cache()
 
         # build mask: True where reward == -1 (failure)
         failure_mask = (rewards_tensor == -1)   # [B, G] bool
@@ -651,6 +667,8 @@ class AgentLightningVLMRL(pl.LightningModule):
                 )
             # token_log_probs: [B, ResponseLen]  ,has grad_fn 
             # eos_mask:        [B, ResponseLen]  1=real token, 0=pad
+            del gen_output_g
+            torch.cuda.empty_cache()
 
             # ── NSR token-level advantages (no grad) ─────────────────────
             # mode="negative": advantage = -1 for failures, 0 for successes
@@ -662,6 +680,8 @@ class AgentLightningVLMRL(pl.LightningModule):
                 gamma=1.0,              # no discount — flat reward across tokens
                 mode="nsr",        # learn from failures only
             )
+            del returns 
+            torch.cuda.empty_cache()
             # advantages: [B, ResponseLen]
             # advantages[failure_rows] = -1 at real tokens, 0 at padding
             # advantages[success_rows] = 0  everywhere
@@ -686,6 +706,19 @@ class AgentLightningVLMRL(pl.LightningModule):
 
             total_loss    = total_loss + pg_loss / self.G
             total_pg_loss += pg_loss.item() / self.G
+
+            # Free tensors after loss accumulation
+            del token_log_probs, eos_mask, advantages, pg_loss
+            torch.cuda.empty_cache()
+
+
+        # Final cleanup
+        del rewards_tensor, failure_mask
+        try:
+            del all_gen_outputs     # free any remaining gen_outputs
+        except:
+            pass
+        torch.cuda.empty_cache()
 
         # ── Logging ───────────────────────────────────────────────────────
         self.log(f"{logging_prefix}/pg_loss", total_pg_loss,
