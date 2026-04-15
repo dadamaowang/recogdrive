@@ -176,11 +176,6 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
     data_path = Path(cfg.navsim_log_path)
     sensor_blobs_path = Path(cfg.sensor_blobs_path)
 
-    print("路径检查：")
-    print(f"数据路径: {data_path}")
-    print(f"传感器 Blob 路径: {sensor_blobs_path}") 
-
-
     train_scene_loader = SceneLoader(
         sensor_blobs_path=sensor_blobs_path,
         data_path=data_path,
@@ -212,12 +207,7 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         cache_path=cfg.cache_path,
         force_cache_computation=cfg.force_cache_computation,
     )
-
-    print("数据集检查")
-    print(f"训练集样本数: {len(train_data)}")
-    print(f"验证集样本数: {len(val_data)}") 
-
-
+    
     return train_data, val_data
 
 

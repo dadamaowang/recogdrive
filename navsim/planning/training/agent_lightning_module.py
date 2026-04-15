@@ -616,8 +616,12 @@ class AgentLightningVLMRL(pl.LightningModule):
         del all_rewards
         torch.cuda.empty_cache()
 
-        # build mask: True where reward == -1 (failure)
-        failure_mask = (rewards_tensor == -1)   # [B, G] bool
+        # build mask: True where reward == 0 (failure)
+        """
+        reward > 0.0 for safe trajectory → no learning signal (advantage=0)
+        reward == 0.0 作为负样本
+        """
+        failure_mask = (rewards_tensor == 0)   # [B, G] bool
 
         # check if any failures exist in this batch
         num_failures = failure_mask.sum().item()
