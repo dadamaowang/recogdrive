@@ -455,6 +455,9 @@ class AgentLightningVLMRL(pl.LightningModule):
         :param logging_prefix: prefix where to log step
         :return: scalar loss
         """
+        
+
+
         features, targets, tokens_list = batch
 
         # ---------------------------- UNPACK features ------------------------------
@@ -603,6 +606,8 @@ class AgentLightningVLMRL(pl.LightningModule):
                         tokens_list=tokens_list,
                     )   # [B]
                     all_rewards.append(reward)
+        
+        print(f"Forward Pass Memory Summary:\n{torch.cuda.memory_summary()}")
 
         # ---------------------------- Compute Advantages ------------------------------
         #   Learn only from failure 
@@ -755,6 +760,8 @@ class AgentLightningVLMRL(pl.LightningModule):
         :param batch_idx: index of batch (ignored)
         :return: scalar loss
         """
+        print(f"Batch Memory Summary:\n{torch.cuda.memory_summary()}")
+
         return self._step(batch, "train")
 
 
