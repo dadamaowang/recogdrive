@@ -5,15 +5,15 @@ nvidia-smi
 export NAVSIM_EXP_ROOT="/UserData/xnq/navsim_workspace/exp"     # exp log 存放; cache_dataset 位置存放
 
 export NAVSIM_DEVKIT_ROOT="/root/recogdrive"
-# export OPENSCENE_DATA_ROOT="/UserData/xnq/navsim_workspace/dataset"
-export OPENSCENE_DATA_ROOT="/UserData/xnq/nav_mini"
+export OPENSCENE_DATA_ROOT="/UserData/xnq/navsim_workspace/dataset"
+# export OPENSCENE_DATA_ROOT="/UserData/xnq/nav_mini"
 export NUPLAN_MAPS_ROOT="$OPENSCENE_DATA_ROOT/maps"
 export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   # data
-EXP_NAME=pre-exp_01_2b_small_data
+EXP_NAME=test_0415
 
 
 # --------
@@ -110,8 +110,10 @@ torchrun \
     cache_path=null \
     agent=negdrive_agent \
     force_cache_computation=False \
-    dataloader.params.batch_size=2 \
+    dataloader.params.batch_size=16 \
     trainer.params.max_epochs=4 \
+    trainer.params.limit_train_batches=0.01 \
+    trainer.params.limit_val_batches=0.01 \
     trainer.params.strategy="ddp_find_unused_parameters_true" \
     trainer.params.devices=2 \
     agent.metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache_train" \
