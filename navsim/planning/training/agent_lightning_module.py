@@ -623,6 +623,9 @@ class AgentLightningVLMRL(pl.LightningModule):
         """
         failure_mask = (rewards_tensor == 0)   # [B, G] bool
 
+        # Change rewards from 0 to -1 for failures  TODO check if works
+        rewards_tensor[failure_mask] = -1
+
         # check if any failures exist in this batch
         num_failures = failure_mask.sum().item()
 
