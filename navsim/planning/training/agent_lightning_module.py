@@ -456,72 +456,13 @@ class AgentLightningVLMRL(pl.LightningModule):
         :return: scalar loss
         """
         
-
-
         features, targets, tokens_list = batch
 
-        # ---------------------------- UNPACK features ------------------------------
-        #                             (images + prompts)
-        # ---------------------------------------------------------------------------
-        for key, tensor in features.items():
-            if isinstance(tensor, torch.Tensor):
-                features[key] = tensor.cuda()
-        
-        history_trajectory = features["history_trajectory"].cuda()  
-        if history_trajectory.ndim == 2:
-            history_trajectory = history_trajectory.unsqueeze(0)
+        pixel_values_cat, questions, num_patches_list, history_trajectory = self.unpack_features(features)
 
-        high_command_one_hot = features["high_command_one_hot"].cuda()
-        if high_command_one_hot.ndim == 1:
-            high_command_one_hot = high_command_one_hot.unsqueeze(0)
-        
-        image_path_tensor = features["image_path_tensor"]
-        if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
-        image_paths = decode_paths_from_tensor(image_path_tensor)
-
-        pixel_values_list = [load_image(path) for path in image_paths] 
-        num_patches_list = [p.shape[0] for p in pixel_values_list]
-        pixel_values_cat = torch.cat(pixel_values_list, dim=0).cuda()
-
-        navigation_commands = ['turn left', 'go straight', 'turn right']
-        command_indices = torch.argmax(high_command_one_hot, dim=-1)
-        command_str_list = [navigation_commands[idx.item()] for idx in command_indices]
-
-        questions = []
-        batch_size = high_command_one_hot.shape[0]
-        for i in range(batch_size):
-            history_trajectory_sample = history_trajectory[i]
-            command_str_sample = command_str_list[i]
-
-            history_str = ' '.join([
-                f'   - t-{3-j}: ({format_number(history_trajectory_sample[j, 0].item())}, '
-                f'{format_number(history_trajectory_sample[j, 1].item())}, '
-                f'{format_number(history_trajectory_sample[j, 2].item())})'
-                for j in range(history_trajectory_sample.shape[0])
-            ])
-                                    
-            prompt = (
-                "<image>\nAs an autonomous driving system, predict the vehicle's trajectory based on:\n"
-                "1. Visual perception from front camera view\n"
-                f"2. Historical motion context (last 4 timesteps):{history_str}\n"
-                f"3. Active navigation command: [{command_str_sample.upper()}]"
-            )     # TODO 【TOEXP】
-
-            output_requirements = (
-                "\nOutput requirements:\n- Predict 8 future trajectory points\n"
-                "- Each point format: (x:float, y:float, heading:float)\n"
-                "- Use [PT, ...] to encapsulate the trajectory\n"
-                "- Maintain numerical precision to 2 decimal places"
-            )   # TODO 【TOEXP】
-
-            questions.append(f"{prompt}{output_requirements}")
-
-
-        # ---------------------------- ROLLOUT ------------------------------
-        # Generate G text responses, and corresponding hidden states
-        # Run Diffusion Planner 
-        # Score PDM
-        # -------------------------------------------------------------------
+        # -----------------------------
+        # Rollout
+        # -----------------------------
         all_gen_output = [] 
         all_rewards = []    # [G, B] - PDM scores 
         with torch.no_grad():
@@ -607,7 +548,7 @@ class AgentLightningVLMRL(pl.LightningModule):
                     )   # [B]
                     all_rewards.append(reward)
         
-        print(f"Forward Pass Memory Summary:\n{torch.cuda.memory_summary()}")
+        # print(f"Forward Pass Memory Summary:\n{torch.cuda.memory_summary()}")
 
         # ---------------------------- Compute Advantages ------------------------------
         #   Learn only from failure 
@@ -623,8 +564,20 @@ class AgentLightningVLMRL(pl.LightningModule):
         """
         failure_mask = (rewards_tensor == 0)   # [B, G] bool
 
+        print("奖励张量检查")
+        print(rewards_tensor)
+
+        print("失败掩码检查")
+        print(failure_mask)
+
+
+
         # Change rewards from 0 to -1 for failures  TODO check if works
         rewards_tensor[failure_mask] = -1
+
+
+
+
 
         # check if any failures exist in this batch
         num_failures = failure_mask.sum().item()
@@ -634,9 +587,7 @@ class AgentLightningVLMRL(pl.LightningModule):
                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
         self.log(f"{logging_prefix}/num_failures", float(num_failures),
                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
-        self.log(f"{logging_prefix}/failure_rate",
-                failure_mask.float().mean(),
-                on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+
 
         # If no failures, skip optimizer step — nothing to learn from
         if num_failures == 0:
@@ -743,6 +694,70 @@ class AgentLightningVLMRL(pl.LightningModule):
 
         return total_loss
 
+
+    def unpack_features(self, features: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, List[str], List[int]]:
+        """
+        Unpack and prepare features for the VLM.
+
+        Args:
+            features: Dictionary containing raw feature tensors.
+
+        """
+        for key, tensor in features.items():
+            if isinstance(tensor, torch.Tensor):
+                features[key] = tensor.cuda()
+        
+        history_trajectory = features["history_trajectory"].cuda()  
+        if history_trajectory.ndim == 2:
+            history_trajectory = history_trajectory.unsqueeze(0)
+
+        high_command_one_hot = features["high_command_one_hot"].cuda()
+        if high_command_one_hot.ndim == 1:
+            high_command_one_hot = high_command_one_hot.unsqueeze(0)
+        
+        image_path_tensor = features["image_path_tensor"]
+        if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
+        image_paths = decode_paths_from_tensor(image_path_tensor)
+
+        pixel_values_list = [load_image(path) for path in image_paths] 
+        num_patches_list = [p.shape[0] for p in pixel_values_list]
+        pixel_values_cat = torch.cat(pixel_values_list, dim=0).cuda()
+
+        navigation_commands = ['turn left', 'go straight', 'turn right']
+        command_indices = torch.argmax(high_command_one_hot, dim=-1)
+        command_str_list = [navigation_commands[idx.item()] for idx in command_indices]
+
+        questions = []
+        batch_size = high_command_one_hot.shape[0]
+        for i in range(batch_size):
+            history_trajectory_sample = history_trajectory[i]
+            command_str_sample = command_str_list[i]
+
+            history_str = ' '.join([
+                f'   - t-{3-j}: ({format_number(history_trajectory_sample[j, 0].item())}, '
+                f'{format_number(history_trajectory_sample[j, 1].item())}, '
+                f'{format_number(history_trajectory_sample[j, 2].item())})'
+                for j in range(history_trajectory_sample.shape[0])
+            ])
+                                    
+            prompt = (
+                "<image>\nAs an autonomous driving system, predict the vehicle's trajectory based on:\n"
+                "1. Visual perception from front camera view\n"
+                f"2. Historical motion context (last 4 timesteps):{history_str}\n"
+                f"3. Active navigation command: [{command_str_sample.upper()}]"
+            )     # TODO 【TOEXP】
+
+            output_requirements = (
+                "\nOutput requirements:\n- Predict 8 future trajectory points\n"
+                "- Each point format: (x:float, y:float, heading:float)\n"
+                "- Use [PT, ...] to encapsulate the trajectory\n"
+                "- Maintain numerical precision to 2 decimal places"
+            )   # TODO 【TOEXP】
+
+            questions.append(f"{prompt}{output_requirements}")
+        
+        return pixel_values_cat, questions, num_patches_list, history_trajectory
+
     
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         """
@@ -767,6 +782,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         :param batch_idx: index of batch (ignored)
         :return: scalar loss
         """
+        print("一批Batch的显寸占用检查")
         print(f"Batch Memory Summary:\n{torch.cuda.memory_summary()}")
 
         return self._step(batch, "train")
@@ -816,3 +832,11 @@ class AgentLightningVLMRL(pl.LightningModule):
     def configure_optimizers(self):
         print('Configure Optimizers ...')
         return self.agent.get_optimizers()
+
+
+
+
+def print_vram(stage):
+    alloc = torch.cuda.max_memory_allocated() / 1024**3
+    reserved = torch.cuda.max_memory_reserved() / 1024**3
+    print(f"[{stage}] Allocated: {alloc:.2f}GB | Reserved: {reserved:.2f}GB")

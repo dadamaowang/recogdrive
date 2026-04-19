@@ -662,11 +662,6 @@ class NegDriveDiffusionPlanner(nn.Module):
 
             print(pdm_result)
 
-            # TODO test 
-            # pdm_result.score = np.float(-1.0)
-
-            pdm_result.score = float(-1.0)
-
             """
             PDMResults(
             no_at_fault_collisions=np.float64(1.0), 
