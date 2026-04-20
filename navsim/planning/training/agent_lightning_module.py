@@ -445,7 +445,6 @@ class AgentLightningVLMRL(pl.LightningModule):
         self.automatic_optimization = False
 
 
-
     def _step(self, 
               batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], 
               logging_prefix: str) -> Tensor:
@@ -547,16 +546,6 @@ class AgentLightningVLMRL(pl.LightningModule):
         
         print_vram("Rollout 结束")
 
-
-        print("生成输出检查：形状")
-        print("GEN OUTPUT:")
-        print(all_gen_output.shape)
-        print("奖励：")
-        print(all_rewards.shape)
-        print("旧的 logprob")
-        print(all_logprobs_old_tokens.shape)
-
-
         # =============================
         # Filter out failues
         # =============================
@@ -572,45 +561,37 @@ class AgentLightningVLMRL(pl.LightningModule):
         设计 reward 
         """
         num_failures = failure_mask.sum().item()
+        print(f"负样本数目：{num_failures}")
         self.log(f"{logging_prefix}/num_failures", float(num_failures),
                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
         # If no failures, skip optimizer step — nothing to learn from
         if num_failures == 0:
-            del all_gen_outputs, all_rewards, all_log_probs_old_tokens
+            del all_gen_output, all_log_probs_old_tokens, rewards_tensor, failure_mask
             torch.cuda.empty_cache()
             print("没有负样本")
             return self._zero_loss()
 
 
-
-
-
-        # ─────────────────────────────────────────────────────────────────
-        # PHASE 3: OPTIMIZE VLM (gradients ON)
-        # ─────────────────────────────────────────────────────────────────
-        # For each G rollout:
-        #   1. Recompute per-token log probs WITH gradients
-        #   2. Compute NSR token-level advantages from reward
-        #   3. Loss = -(advantage * token_log_prob).sum() for failures only
-        # ─────────────────────────────────────────────────────────────────
-
-        print("负样本优化检查")
-
+        # =============================
+        # Update on failure samples
+        # =============================
+        """TODO 
+        弄明白这里的 loss, 怎么样算实验成功
+        
+        """
         total_loss    = torch.tensor(0.0, device=self.device)
         total_pg_loss = 0.0
-        num_rollouts_with_failures = 0
 
         for g in range(self.G):
-            rewards_g      = rewards_tensor[:, g]       # [B] {-1.0, 1.0}
             failure_mask_g = failure_mask[:, g]         # [B] bool
-            gen_output_g   = all_gen_output[g]
-
             # Skip this rollout if no failures — no gradient needed
             if not failure_mask_g.any():
                 continue
 
-            num_rollouts_with_failures += 1
+            rewards_g      = rewards_tensor[:, g]       # [B] {-1.0, 1.0}
+            gen_output_g   = all_gen_output[g]
+            old_log_probs_g    = all_logprobs_old_tokens[g].to(self.device)  # [B, ResponseLen]
 
             # ── Per-token log probs WITH gradients ───────────────────────
             # This is where gradient flows back into VLM LoRA weights
@@ -624,51 +605,35 @@ class AgentLightningVLMRL(pl.LightningModule):
             # eos_mask:        [B, ResponseLen]  1=real token, 0=pad
             del gen_output_g
             torch.cuda.empty_cache()
+            print_vram("计算 token log probs 结束")
 
-            # ── NSR token-level advantages (no grad) ─────────────────────
-            # mode="negative": advantage = -1 for failures, 0 for successes
-            # Each token in the response gets the sequence's scalar reward
-            advantages, returns = compute_negdrive_advantages(
-                policy_log_probs_tokens=token_log_probs.detach(),
-                rewards=rewards_g,
-                eos_mask=eos_mask.detach(),
-                gamma=1.0,              # no discount — flat reward across tokens
-                mode="nsr",        # learn from failures only
-            )
-            del returns 
+            # ── NSR loss: ratio clipping, raw reward=-1, no normalization ─
+            # For failure samples: loss = max(ratio, clip(ratio, 1-ε, 1+ε))
+            # Minimizing this reduces π_θ/π_old → policy moves away from bad text
+            log_ratio     = token_log_probs - old_log_probs_g.detach()  # [B, T]
+            ratio         = torch.exp(log_ratio)                        # [B, T]
+            ratio_clipped = torch.clamp(ratio, 1 - 0.2, 1 + 0.2)
+
+            # NSR: reward=-1, so loss = max(ratio, ratio_clipped) per token
+            per_token_loss = torch.max(ratio, ratio_clipped)            # [B, T]
+
+            # Apply masks: zero out padding AND success samples
+            failure_expanded = failure_mask_g.unsqueeze(-1).float()     # [B, 1]
+            per_token_loss   = per_token_loss * eos_mask * failure_expanded  # [B, T]
+
+            # Mean over real failure tokens (not batch size — per paper)
+            num_tokens = (eos_mask * failure_expanded).sum().clamp(min=1)
+            loss_g     = per_token_loss.sum() / num_tokens
+
+            total_loss    = total_loss + loss_g / self.G
+            total_pg_loss += loss_g.item() / self.G
+            num_updated   += failure_mask_g.sum().item()
+
+            del token_log_probs, eos_mask, old_log_probs_g, per_token_loss, loss_g
             torch.cuda.empty_cache()
-            # advantages: [B, ResponseLen]
-            # advantages[failure_rows] = -1 at real tokens, 0 at padding
-            # advantages[success_rows] = 0  everywhere
-
-            # ── Policy gradient loss ──────────────────────────────────────
-            # loss = -(advantage * log_prob) summed over tokens, mean over batch
-            #
-            # For failure samples:
-            #   advantage = -1  →  loss = -(-1 * log_prob) = log_prob
-            #   minimizing loss pushes log_prob DOWN ✅ (avoid unsafe text)
-            #
-            # For success samples:
-            #   advantage = 0   →  loss = 0
-            #   no gradient contribution ✅
-            #
-            # Normalize by number of real response tokens (not sequence length)
-            # to keep loss scale stable across different response lengths
-            num_real_tokens = eos_mask.sum(dim=-1).clamp(min=1)    # [B]
-            pg_loss = -(advantages * token_log_probs).sum(dim=-1)  # [B]
-            pg_loss = pg_loss / num_real_tokens                     # [B] normalize
-            pg_loss = pg_loss.mean()                                # scalar
-
-            total_loss    = total_loss + pg_loss / self.G
-            total_pg_loss += pg_loss.item() / self.G
-
-            # Free tensors after loss accumulation
-            del token_log_probs, eos_mask, advantages, pg_loss
-            torch.cuda.empty_cache()
-
 
         # Final cleanup
-        del rewards_tensor, failure_mask
+        del rewards_tensor, failure_mask, all_rewards, all_logprobs_old_tokens
         try:
             del all_gen_outputs     # free any remaining gen_outputs
         except:
@@ -680,9 +645,7 @@ class AgentLightningVLMRL(pl.LightningModule):
                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
         self.log(f"{logging_prefix}/total_loss", total_loss.item(),
                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
-        self.log(f"{logging_prefix}/rollouts_with_failures",
-                float(num_rollouts_with_failures),
-                on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+
 
         return total_loss
 
@@ -795,8 +758,8 @@ class AgentLightningVLMRL(pl.LightningModule):
         :param batch_idx: index of batch (ignored)
         :return: scalar loss
         """
-        print("一批Batch的显寸占用检查")
-        print(f"Batch Memory Summary:\n{torch.cuda.memory_summary()}")
+
+        print_vram("一批Batch的显寸占用检查")
 
         return self._step(batch, "train")
 
