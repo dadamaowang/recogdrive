@@ -440,7 +440,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         super().__init__()
         self.agent = agent
 
-        self.G = 1  # TODO setting
+        self.G = 3  # TODO setting
 
         self.automatic_optimization = False
 
@@ -459,6 +459,9 @@ class AgentLightningVLMRL(pl.LightningModule):
         features, targets, tokens_list = batch
 
         pixel_values_cat, questions, num_patches_list, history_trajectory = self.unpack_features(features)
+        diff_dtype, diff_input = self.get_diff_input(features, history_trajectory)
+
+        print("成功")
 
         # -----------------------------
         # Rollout
@@ -467,18 +470,18 @@ class AgentLightningVLMRL(pl.LightningModule):
         all_rewards = []    # [G, B] - PDM scores 
         with torch.no_grad():
 
-            # extract and prepare planner input
-            status_feature = features["status_feature"].cuda()
-            if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
-            history_trajectory_reshaped = history_trajectory.view(history_trajectory.size(0), -1)
-            state_input = torch.cat([status_feature, history_trajectory_reshaped], dim=1)
-            diff_dtype = next(self.agent.action_head.parameters()).dtype
-            diff_input = BatchFeature({
-                    "state": state_input.to(diff_dtype),
-                    "his_traj": history_trajectory_reshaped.to(diff_dtype),
-                    "status_feature": status_feature.to(diff_dtype)
-                }
-            )
+            # # extract and prepare planner input
+            # status_feature = features["status_feature"].cuda()
+            # if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
+            # history_trajectory_reshaped = history_trajectory.view(history_trajectory.size(0), -1)
+            # state_input = torch.cat([status_feature, history_trajectory_reshaped], dim=1)
+            # diff_dtype = next(self.agent.action_head.parameters()).dtype
+            # diff_input = BatchFeature({
+            #         "state": state_input.to(diff_dtype),
+            #         "his_traj": history_trajectory_reshaped.to(diff_dtype),
+            #         "status_feature": status_feature.to(diff_dtype)
+            #     }
+            # )
             
             for g in range(self.G):
 
@@ -758,7 +761,28 @@ class AgentLightningVLMRL(pl.LightningModule):
         
         return pixel_values_cat, questions, num_patches_list, history_trajectory
 
-    
+
+    def get_diff_input(self, features: Dict[str, torch.Tensor], history_trajectory: torch.Tensor) -> BatchFeature:
+        """
+        Prepare input for the Diffusion-based planner.
+
+        """
+        # extract and prepare planner input
+        status_feature = features["status_feature"].cuda()
+        if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
+        history_trajectory_reshaped = history_trajectory.view(history_trajectory.size(0), -1)
+        state_input = torch.cat([status_feature, history_trajectory_reshaped], dim=1)
+        diff_dtype = next(self.agent.action_head.parameters()).dtype
+        diff_input = BatchFeature({
+                "state": state_input.to(diff_dtype),
+                "his_traj": history_trajectory_reshaped.to(diff_dtype),
+                "status_feature": status_feature.to(diff_dtype)
+            }
+        )
+        return diff_dtype, diff_input
+            
+
+
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         """
         每次保存 checkpoint 时，只保留 state_dict 中不以 'agent.model' 开头的条目。
