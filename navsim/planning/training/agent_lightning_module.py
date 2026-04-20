@@ -461,38 +461,27 @@ class AgentLightningVLMRL(pl.LightningModule):
         pixel_values_cat, questions, num_patches_list, history_trajectory = self.unpack_features(features)
         diff_dtype, diff_input = self.get_diff_input(features, history_trajectory)
 
-        print("成功")
-
-        # -----------------------------
+        # =============================
         # Rollout
-        # -----------------------------
+        # =============================
         all_gen_output = [] 
         all_rewards = []    # [G, B] - PDM scores 
-        with torch.no_grad():
+        all_logprobs_old_tokens = []    # 
 
-            # # extract and prepare planner input
-            # status_feature = features["status_feature"].cuda()
-            # if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
-            # history_trajectory_reshaped = history_trajectory.view(history_trajectory.size(0), -1)
-            # state_input = torch.cat([status_feature, history_trajectory_reshaped], dim=1)
-            # diff_dtype = next(self.agent.action_head.parameters()).dtype
-            # diff_input = BatchFeature({
-            #         "state": state_input.to(diff_dtype),
-            #         "his_traj": history_trajectory_reshaped.to(diff_dtype),
-            #         "status_feature": status_feature.to(diff_dtype)
-            #     }
-            # )
-            
+        with torch.no_grad():            
             for g in range(self.G):
-
                 with torch.autocast("cuda", dtype=torch.bfloat16):
                     # Generate text reasoning
                     gen_output = self.agent.vlm.generate_text_actions(
                         pixel_values_cat, 
                         questions, 
                         num_patches_list=num_patches_list,
-                        max_new_tokens=512,
+                        max_new_tokens=128,    # TODO reasoning
                     )
+                    """【EXPTODO】
+                    max_new_tokns 的数目，如果要 reasoning 的话，设置多大合适？（也不能爆显存）
+                    
+                    """
                     all_gen_output.append(gen_output)
 
                     # Forward pass with full_ids, get last hidden states
@@ -501,7 +490,7 @@ class AgentLightningVLMRL(pl.LightningModule):
                         gen_output.full_ids,
                         gen_output.attention_mask
                     )
-                    last_hidden_states = fwd_output.hidden_states[-1]
+                    last_hidden_states = fwd_output.hidden_states[-1].clone()
                     del fwd_output
                     torch.cuda.empty_cache()
                     if last_hidden_states.ndim == 2: 
@@ -536,66 +525,66 @@ class AgentLightningVLMRL(pl.LightningModule):
                     [ 3.5862e+00,  2.0090e-01,  1.6826e-01]]], device='cuda:0')}
                     """
 
-                    # #  Compute log prob of this generation (old policy)
-                    # old_log_probs = compute_response_logprobs(
-                    #     model = self.agent.vlm.model,
-                    #     pixel_values=pixel_values_cat,
-                    #     generation_output=gen_output
-                    # )
-                    # all_policy_log_probs_old.append(old_log_probs)
-
                     # get rewards
                     reward = self.agent.action_head.get_grpo_reward(
                         actions,
                         tokens_list=tokens_list,
                     )   # [B]
-                    all_rewards.append(reward)
-        
-        # print(f"Forward Pass Memory Summary:\n{torch.cuda.memory_summary()}")
+                    all_rewards.append(reward.cpu())
+                    del actions
 
-        # ---------------------------- Compute Advantages ------------------------------
-        #   Learn only from failure 
-        # -------------------------------
-        rewards_tensor = torch.stack(all_rewards, dim=1).float()  # [B, G]
+                    # ── Behavior policy log probs (old policy) ────────────
+                    # Computed NOW, inside no_grad, same tokens
+                    # This is π_old used in ratio π_θ/π_old
+                    old_token_log_probs, eos_mask = compute_response_logprobs_tokens(
+                        model=self.agent.vlm.model,
+                        pixel_values=pixel_values_cat,
+                        generation_output=gen_output,
+                    )
+                    all_logprobs_old_tokens.append(old_token_log_probs.cpu())
+                    torch.cuda.empty_cache()
+
+        
+        print_vram("Rollout 结束")
+
+
+        print("生成输出检查：形状")
+        print("GEN OUTPUT:")
+        print(all_gen_output.shape)
+        print("奖励：")
+        print(all_rewards.shape)
+        print("旧的 logprob")
+        print(all_logprobs_old_tokens.shape)
+
+
+        # =============================
+        # Filter out failues
+        # =============================
+        rewards_tensor = torch.stack(
+            [r.to(self.device) for r in all_rewards], dim=1
+        ).float()
         del all_rewards
         torch.cuda.empty_cache()
 
-        # build mask: True where reward == 0 (failure)
-        """
-        reward > 0.0 for safe trajectory → no learning signal (advantage=0)
-        reward == 0.0 作为负样本
-        """
         failure_mask = (rewards_tensor == 0)   # [B, G] bool
-
-        print("奖励张量检查")
-        print(rewards_tensor)
-
-        print("失败掩码检查")
-        print(failure_mask)
-
-
-
-        # Change rewards from 0 to -1 for failures  TODO check if works
-        rewards_tensor[failure_mask] = -1
-
-
-
-
-
-        # check if any failures exist in this batch
+        rewards_tensor[failure_mask] = -1     
+        """【EXPTODO】
+        设计 reward 
+        """
         num_failures = failure_mask.sum().item()
-
-        # Log reward stats regardless
-        self.log(f"{logging_prefix}/mean_reward", rewards_tensor.mean(),
-                on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
         self.log(f"{logging_prefix}/num_failures", float(num_failures),
                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
-
         # If no failures, skip optimizer step — nothing to learn from
         if num_failures == 0:
+            del all_gen_outputs, all_rewards, all_log_probs_old_tokens
+            torch.cuda.empty_cache()
             print("没有负样本")
             return self._zero_loss()
+
+
+
+
 
         # ─────────────────────────────────────────────────────────────────
         # PHASE 3: OPTIMIZE VLM (gradients ON)
@@ -861,6 +850,7 @@ class AgentLightningVLMRL(pl.LightningModule):
 
 
 def print_vram(stage):
+    print("显存检查：")
     alloc = torch.cuda.max_memory_allocated() / 1024**3
     reserved = torch.cuda.max_memory_reserved() / 1024**3
     print(f"[{stage}] Allocated: {alloc:.2f}GB | Reserved: {reserved:.2f}GB")
