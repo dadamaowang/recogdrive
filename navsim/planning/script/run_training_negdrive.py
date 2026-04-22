@@ -10,24 +10,25 @@
 @Desc    :   None
 '''
 
-from typing import Tuple
+from typing import Tuple, List, Dict 
 from pathlib import Path
 import logging
 import os
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig
+
+import torch
 from torch.utils.data import DataLoader
-import pytorch_lightning as pl
 import torch.distributed as dist
+
+import pytorch_lightning as pl
+
 from navsim.agents.abstract_agent import AbstractAgent
 from navsim.common.dataclasses import SceneFilter
 from navsim.common.dataloader import SceneLoader
-from navsim.planning.training.dataset import CacheOnlyDataset, Dataset
-from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL
-import torch
-import torch.nn.utils.rnn as rnn_utils
-from typing import List, Dict
+from navsim.planning.training.dataset import Dataset
+from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL, VRAMMonitor
 
 
 
@@ -212,6 +213,11 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
 
 
 
+
+
+
+
+
 @hydra.main(config_path=CONFIG_PATH, config_name=CONFIG_NAME, version_base=None)
 def main(cfg: DictConfig) -> None:
     """
@@ -297,6 +303,7 @@ def main(cfg: DictConfig) -> None:
     trainer = pl.Trainer(
         **cfg.trainer.params,    
         enable_checkpointing=False,
+        callbacks=[VRAMMonitor()]
         # fast_dev_run=True
     )
     # logger.info("Building Trainer")

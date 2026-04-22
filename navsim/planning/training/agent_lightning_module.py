@@ -11,6 +11,7 @@
 '''
 
 import pytorch_lightning as pl
+from pytorch_lightning import Callback
 
 import torch
 from torch import Tensor
@@ -315,25 +316,19 @@ def compute_response_logprobs_tokens(
 
     # Free full logits immediately — no longer needed
     del logits, shift_logits, shift_ids, shift_mask
-    torch.cuda.empty_cache()
 
+    token_log_probs = -F.cross_entropy(
+        input=response_logits.reshape(-1, response_logits.size(-1)),
+        target=response_ids.reshape(-1),
+        reduction='none'
+    ).reshape(response_logits.shape[:-1])  # [B, L_resp]
 
-    log_probs_all   = F.log_softmax(response_logits, dim=-1)   # [B, S-1, V]
-    token_log_probs = log_probs_all.gather(
-        dim=-1,
-        index=response_ids.unsqueeze(-1)
-    ).squeeze(-1)                           # [B, S-1]
+    eos_mask = response_mask.float()
+    token_log_probs = token_log_probs * eos_mask
 
-    # Free vocab-size tensor immediately
-    del log_probs_all, response_logits
-    torch.cuda.empty_cache()
+    del response_logits, response_ids, response_mask
 
-    # Apply mask
-    eos_mask        = response_mask                                  # [B, ResponseLen]
-    token_log_probs = token_log_probs * eos_mask                    # [B, ResponseLen]
-
-    return token_log_probs, eos_mask
-
+    return token_log_probs, eos_mask    
 
 
 def compute_negdrive_advantages(
@@ -468,7 +463,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         all_logprobs_old_tokens = []    # 
 
         with torch.no_grad():            
-            for g in range(self.G):
+            for g in range(self.G):  
                 with torch.autocast("cuda", dtype=torch.bfloat16):
                     # Generate text reasoning
                     gen_output = self.agent.vlm.generate_text_actions(
@@ -489,6 +484,7 @@ class AgentLightningVLMRL(pl.LightningModule):
                         gen_output.full_ids,
                         gen_output.attention_mask
                     )
+
                     last_hidden_states = fwd_output.hidden_states[-1].clone()
                     del fwd_output
                     torch.cuda.empty_cache()
@@ -543,9 +539,6 @@ class AgentLightningVLMRL(pl.LightningModule):
                     all_logprobs_old_tokens.append(old_token_log_probs.cpu())
                     torch.cuda.empty_cache()
 
-        
-        print_vram("Rollout 结束")
-
         # =============================
         # Filter out failues
         # =============================
@@ -567,7 +560,7 @@ class AgentLightningVLMRL(pl.LightningModule):
 
         # If no failures, skip optimizer step — nothing to learn from
         if num_failures == 0:
-            del all_gen_output, all_log_probs_old_tokens, rewards_tensor, failure_mask
+            del all_gen_output, all_logprobs_old_tokens, rewards_tensor, failure_mask
             torch.cuda.empty_cache()
             print("没有负样本")
             return self._zero_loss()
@@ -605,7 +598,6 @@ class AgentLightningVLMRL(pl.LightningModule):
             # eos_mask:        [B, ResponseLen]  1=real token, 0=pad
             del gen_output_g
             torch.cuda.empty_cache()
-            print_vram("计算 token log probs 结束")
 
             # ── NSR loss: ratio clipping, raw reward=-1, no normalization ─
             # For failure samples: loss = max(ratio, clip(ratio, 1-ε, 1+ε))
@@ -627,7 +619,6 @@ class AgentLightningVLMRL(pl.LightningModule):
 
             total_loss    = total_loss + loss_g / self.G
             total_pg_loss += loss_g.item() / self.G
-            num_updated   += failure_mask_g.sum().item()
 
             del token_log_probs, eos_mask, old_log_probs_g, per_token_loss, loss_g
             torch.cuda.empty_cache()
@@ -759,8 +750,6 @@ class AgentLightningVLMRL(pl.LightningModule):
         :return: scalar loss
         """
 
-        print_vram("一批Batch的显寸占用检查")
-
         return self._step(batch, "train")
 
 
@@ -812,8 +801,33 @@ class AgentLightningVLMRL(pl.LightningModule):
 
 
 
-def print_vram(stage):
-    print("显存检查：")
-    alloc = torch.cuda.max_memory_allocated() / 1024**3
-    reserved = torch.cuda.max_memory_reserved() / 1024**3
-    print(f"[{stage}] Allocated: {alloc:.2f}GB | Reserved: {reserved:.2f}GB")
+def get_realtime_vram(device=0):
+    """Return Current VRAM usage for the specified GPU device."""
+
+    free, total = torch.cuda.mem_get_info(device)
+    allocated = torch.cuda.memory_allocated(device)
+    reserved  = torch.cuda.memory_reserved(device)
+
+    return {
+        "total_gb":   total / 1024**3,
+        "free_gb":    free / 1024**3,
+        "allocated_gb": allocated / 1024**3,  # 实际被 tensor 占用的显存
+        "reserved_gb":  reserved / 1024**3,   # PyTorch 缓存池预留（含碎片）
+        "used_pct":   (1 - free / total) * 100
+    }
+
+
+class VRAMMonitor(Callback):
+    def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
+        status = get_realtime_vram(pl_module.device.index)
+
+        print(f"Batch 批次：{batch_idx} \
+              已用: {status['allocated_gb']:.2f}GB \
+              | 剩余: {status['free_gb']:.2f}GB \
+                | 利用率: {status['used_pct']:.1f}%")
+
+        pl_module.log("vram/allocated_gb", status["allocated_gb"], prog_bar=True, sync_dist=True)
+        pl_module.log("vram/free_gb", status["free_gb"], prog_bar=True, sync_dist=True)
+        pl_module.log("vram/used_pct", status["used_pct"], prog_bar=True, sync_dist=True)
+
+

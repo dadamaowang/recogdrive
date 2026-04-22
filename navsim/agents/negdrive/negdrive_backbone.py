@@ -248,6 +248,8 @@ class NegDriveBackbone(nn.Module):
             lora_config
         )
         print(f"LORA APPLIED: R={r}, ALPHA={lora_alpha}, DROPOUT={lora_dropout}")
+
+        self.model.enable_input_require_grads()
         
 
     def _print_trainable_parameters(self):
@@ -420,7 +422,7 @@ class NegDriveBackbone(nn.Module):
         text_actions = self.tokenizer.batch_decode(
             generated_ids, skip_special_tokens=True
         )
-        print(f"生成的文字检查 512 MAX: {text_actions}")
+        print(f"生成文字检查: {text_actions}")
 
         return NegDriveGenOutput(
             full_ids=full_ids,

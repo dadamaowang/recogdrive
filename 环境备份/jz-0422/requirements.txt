@@ -98,7 +98,7 @@ mistune==3.2.0
 mpmath==1.3.0
 msgpack==1.1.2
 multidict==6.7.1
--e git+ssh://git@github.com/dadamaowang/recogdrive.git@9795ecad11aeb8580146e21ba013c152e1a86ddd#egg=navsim
+-e git+ssh://git@github.com/dadamaowang/recogdrive.git@c522c1ebbdb9a3c9f3315ab6d0ba8437238075a2#egg=navsim
 nbclient==0.10.2
 nbconvert==7.17.0
 nbformat==5.10.4
