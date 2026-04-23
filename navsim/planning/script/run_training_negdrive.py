@@ -17,7 +17,7 @@ import os
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig
-
+ 
 import torch
 from torch.utils.data import DataLoader
 import torch.distributed as dist
@@ -32,10 +32,19 @@ from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL,
 
 
 
+
 logger = logging.getLogger(__name__)
 
 CONFIG_PATH = "config/training"
 CONFIG_NAME = "default_training"   
+
+
+print("检查：")
+print(torch.__version__, torch.version.cuda)
+
+
+
+
 
 
 def custom_collate_fn(
