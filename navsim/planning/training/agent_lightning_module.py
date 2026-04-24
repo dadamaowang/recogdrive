@@ -191,7 +191,7 @@ def compute_response_logprobs(
         pixel_values: torch.Tensor, 
         generation_output: NegDriveGenOutput,
     ) -> torch.Tensor:
-    """ TODO 参考 verl 有空研究下这个计算方式
+    """ TODO 参考 verl 
     Compute mean log prob over RESPONSE TOKENS ONLY, via a forward pass
     using the already-generated full_ids as input.
 

@@ -247,10 +247,29 @@ class NegDriveBackbone(nn.Module):
             self.model.language_model,
             lora_config
         )
+        if not hasattr(self.model.language_model, "peft_config"):
+            raise RuntimeError("LoRA 失败！！！！")
         print(f"LORA APPLIED: R={r}, ALPHA={lora_alpha}, DROPOUT={lora_dropout}")
 
-        self.model.enable_input_require_grads()
+
+        # Check if LoRA layers are applied to the model and calculate VRAM usage.
+
+        total_params = sum(p.numel() for p in self.model.parameters())
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         
+        print("LoRA 信息:")
+        print(f"Total Parameters: {total_params / 1e6:.2f}M")
+        print(f"Trainable Parameters: {trainable_params / 1e6:.2f}M")
+        print(f"LoRA Parameters: {(trainable_params / total_params) * 100:.2f}% of total parameters")
+        
+        # Estimate VRAM usage (approximation)
+        print("显存估计：")
+        param_size = total_params * 2 / (1024 ** 2)  
+        trainable_size = trainable_params * 2 / (1024 ** 2)
+        print(f"Estimated VRAM Usage (FP16): {param_size:.2f} MB")
+        print(f"Estimated Trainable VRAM Usage (FP16): {trainable_size:.2f} MB")
+
+
 
     def _print_trainable_parameters(self):
         """
