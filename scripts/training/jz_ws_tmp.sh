@@ -13,7 +13,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   # data
-EXP_NAME=exp_0424_01
+EXP_NAME=exp_0426_01
 
 
 # --------

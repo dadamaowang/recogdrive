@@ -460,7 +460,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         # =============================
         all_gen_output = [] 
         all_rewards = []    # [G, B] - PDM scores 
-        all_logprobs_old_tokens = []    # 
+        all_logprobs_old_tokens = []    
 
         with torch.no_grad():            
             for g in range(self.G):  
@@ -487,7 +487,6 @@ class AgentLightningVLMRL(pl.LightningModule):
 
                     last_hidden_states = fwd_output.hidden_states[-1].clone()
                     del fwd_output
-                    torch.cuda.empty_cache()
                     if last_hidden_states.ndim == 2: 
                         last_hidden_states = last_hidden_states.unsqueeze(0)
 
@@ -497,7 +496,6 @@ class AgentLightningVLMRL(pl.LightningModule):
                         diff_input
                     )   # [B, T, 3]
                     del last_hidden_states
-                    torch.cuda.empty_cache()
 
                     """
                     BatchFeature(data={"pred_traj": final_actions})
@@ -537,7 +535,7 @@ class AgentLightningVLMRL(pl.LightningModule):
                         generation_output=gen_output,
                     )
                     all_logprobs_old_tokens.append(old_token_log_probs.cpu())
-                    torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
 
         # =============================
         # Filter out failues
@@ -546,7 +544,13 @@ class AgentLightningVLMRL(pl.LightningModule):
             [r.to(self.device) for r in all_rewards], dim=1
         ).float()
         del all_rewards
-        torch.cuda.empty_cache()
+
+        """
+        Rewards Tensor: 
+        tensor([[0., 0., 0.],
+                [0., 0., 0.]], device='cuda:0')
+        形状：[G, B]
+        """
 
         failure_mask = (rewards_tensor == 0)   # [B, G] bool
         rewards_tensor[failure_mask] = -1     
@@ -569,12 +573,13 @@ class AgentLightningVLMRL(pl.LightningModule):
         # =============================
         # Update on failure samples
         # =============================
-        """TODO 
-        弄明白这里的 loss, 怎么样算实验成功
-        
-        """
+
         total_loss    = torch.tensor(0.0, device=self.device)
         total_pg_loss = 0.0
+        num_tokens_total = 0
+
+        for sample in num_failures:
+            
 
         for g in range(self.G):
             failure_mask_g = failure_mask[:, g]         # [B] bool
