@@ -455,6 +455,13 @@ class AgentLightningVLMRL(pl.LightningModule):
         pixel_values_cat, questions, num_patches_list, history_trajectory = self.unpack_features(features)
         diff_dtype, diff_input = self.get_diff_input(features, history_trajectory)
 
+        print("检查图像样本大小：")
+        print(f"pixel_values_cat shape: {pixel_values_cat.shape}, "
+            f"size: {pixel_values_cat.numel() * 2 / 1e9:.2f}GB (bfloat16)")
+
+        # After unpack_features:
+        self._log_vram("【显存检查01】after_unpack")
+
         # =============================
         # Rollout
         # =============================
@@ -535,7 +542,14 @@ class AgentLightningVLMRL(pl.LightningModule):
                         generation_output=gen_output,
                     )
                     all_logprobs_old_tokens.append(old_token_log_probs.cpu())
+
+                    # After each rollout g:
+                    self._log_vram(f"【显存检查 02- Rollout】after_rollout_g{g}")
+
+
         torch.cuda.empty_cache()
+        # After torch.cuda.empty_cache() at end of rollout:
+        self._log_vram("【显存检查 03- Rollout Complete】after_rollout_complete")
 
         # =============================
         # Filter out failues
@@ -584,6 +598,9 @@ class AgentLightningVLMRL(pl.LightningModule):
         total_loss    = torch.tensor(0.0, device=self.device)
         total_pg_loss = 0.0
         for (b, g) in failure_samples:
+            # Before failure sample forward pass:
+            self._log_vram(f"【显存检查 04- Failure Sample】before_forward_b{b}_g{g}")
+
             gen_output_g = all_gen_output[g]
             old_lp_bg = all_logprobs_old_tokens[g][b:b+1].to(self.device) # [1, ResponseLen]
 
@@ -610,7 +627,11 @@ class AgentLightningVLMRL(pl.LightningModule):
                     generation_output=gen_output_single,  # B=1
                 )  # [1, ResponseLen]  ← has grad_fn      
 
-            print("单样本 logprob 计算成功")      
+            print("单样本 logprob 计算成功")   
+            # 这部分结束了，为何显存又暴涨？哪里又出现问题？数据/模型并行了？   
+
+            # After compute_response_logprobs_tokens:
+            self._log_vram(f"【显存检查 05- Failure Sample】after_forward_b{b}_g{g}")
 
             # NSR loss
             log_ratio_b     = token_lp_b - old_lp_bg.detach()
@@ -619,14 +640,21 @@ class AgentLightningVLMRL(pl.LightningModule):
 
             per_token_loss_b = torch.max(ratio_b, ratio_clipped_b) * eos_mask_b
             num_tokens_b     = eos_mask_b.sum().clamp(min=1)
-            loss_b           = per_token_loss_b.sum() / num_tokens_b   # scalar ✅
+            loss_b           = per_token_loss_b.sum() / num_tokens_b   # scalar 
 
             total_loss    = total_loss + loss_b / num_failures
             total_pg_loss += loss_b.item() / num_failures
 
+            # After loss computation:
+            self._log_vram(f"【显存检查 06- Failure Sample】after_loss_b{b}_g{g}")
+
+            del token_lp_b, eos_mask_b, log_ratio_b, ratio_b, ratio_clipped_b, per_token_loss_b, old_lp_bg, loss_b
+            torch.cuda.empty_cache()
+
 
         # Final cleanup
         del rewards_tensor, failure_mask, all_rewards, all_logprobs_old_tokens
+        del pixel_values_cat, questions, num_patches_list, history_trajectory, diff_input
         try:
             del all_gen_outputs     # free any remaining gen_outputs
         except:
@@ -801,35 +829,45 @@ class AgentLightningVLMRL(pl.LightningModule):
         return self.agent.get_optimizers()
 
 
+    def _log_vram(self, tag: str):
+        """Print VRAM usage at a specific point. Remove after debugging."""
+        allocated = torch.cuda.memory_allocated() / 1e9
+        reserved  = torch.cuda.memory_reserved() / 1e9
+        max_alloc = torch.cuda.max_memory_allocated() / 1e9
+        rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+        print(f"[rank{rank}][{tag}] allocated={allocated:.2f}GB reserved={reserved:.2f}GB peak={max_alloc:.2f}GB")
+        torch.cuda.reset_peak_memory_stats()   # reset peak after each checkpoint
 
 
-def get_realtime_vram(device=0):
-    """Return Current VRAM usage for the specified GPU device."""
-
-    free, total = torch.cuda.mem_get_info(device)
-    allocated = torch.cuda.memory_allocated(device)
-    reserved  = torch.cuda.memory_reserved(device)
-
-    return {
-        "total_gb":   total / 1024**3,
-        "free_gb":    free / 1024**3,
-        "allocated_gb": allocated / 1024**3,  # 实际被 tensor 占用的显存
-        "reserved_gb":  reserved / 1024**3,   # PyTorch 缓存池预留（含碎片）
-        "used_pct":   (1 - free / total) * 100
-    }
 
 
-class VRAMMonitor(Callback):
-    def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
-        status = get_realtime_vram(pl_module.device.index)
+# def get_realtime_vram(device=0):
+#     """Return Current VRAM usage for the specified GPU device."""
 
-        print(f"Batch 批次：{batch_idx} \
-              已用: {status['allocated_gb']:.2f}GB \
-              | 剩余: {status['free_gb']:.2f}GB \
-                | 利用率: {status['used_pct']:.1f}%")
+#     free, total = torch.cuda.mem_get_info(device)
+#     allocated = torch.cuda.memory_allocated(device)
+#     reserved  = torch.cuda.memory_reserved(device)
 
-        pl_module.log("vram/allocated_gb", status["allocated_gb"], prog_bar=True, sync_dist=True)
-        pl_module.log("vram/free_gb", status["free_gb"], prog_bar=True, sync_dist=True)
-        pl_module.log("vram/used_pct", status["used_pct"], prog_bar=True, sync_dist=True)
+#     return {
+#         "total_gb":   total / 1024**3,
+#         "free_gb":    free / 1024**3,
+#         "allocated_gb": allocated / 1024**3,  # 实际被 tensor 占用的显存
+#         "reserved_gb":  reserved / 1024**3,   # PyTorch 缓存池预留（含碎片）
+#         "used_pct":   (1 - free / total) * 100
+#     }
+
+
+# class VRAMMonitor(Callback):
+#     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
+#         status = get_realtime_vram(pl_module.device.index)
+
+#         print(f"Batch 批次：{batch_idx} \
+#               已用: {status['allocated_gb']:.2f}GB \
+#               | 剩余: {status['free_gb']:.2f}GB \
+#                 | 利用率: {status['used_pct']:.1f}%")
+
+#         pl_module.log("vram/allocated_gb", status["allocated_gb"], prog_bar=True, sync_dist=True)
+#         pl_module.log("vram/free_gb", status["free_gb"], prog_bar=True, sync_dist=True)
+#         pl_module.log("vram/used_pct", status["used_pct"], prog_bar=True, sync_dist=True)
 
 

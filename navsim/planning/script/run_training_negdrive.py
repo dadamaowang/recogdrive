@@ -312,7 +312,7 @@ def main(cfg: DictConfig) -> None:
     trainer = pl.Trainer(
         **cfg.trainer.params,    
         enable_checkpointing=False,
-        callbacks=[VRAMMonitor()]
+        # callbacks=[VRAMMonitor()]
         # fast_dev_run=True
     )
     # logger.info("Building Trainer")
