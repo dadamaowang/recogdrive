@@ -13,7 +13,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   # data
-EXP_NAME=exp_0426_01
+EXP_NAME=exp_0427
 
 
 # --------
@@ -112,8 +112,8 @@ torchrun \
     force_cache_computation=False \
     dataloader.params.batch_size=2 \
     trainer.params.max_epochs=10 \
-    trainer.params.strategy="ddp_find_unused_parameters_true" \
     trainer.params.devices=2 \
+    trainer.params.strategy="ddp_find_unused_parameters_false" \
     agent.metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache_train" \
     agent.vlm_path="/UserData/xnq/my_models/Policy/ReCogDrive-VLM-2B" \
     agent.vlm_size="small" \

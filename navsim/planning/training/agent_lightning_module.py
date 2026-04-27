@@ -549,7 +549,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         Rewards Tensor: 
         tensor([[0., 0., 0.],
                 [0., 0., 0.]], device='cuda:0')
-        形状：[G, B]
+        形状：[B, G]
         """
 
         failure_mask = (rewards_tensor == 0)   # [B, G] bool
@@ -573,60 +573,57 @@ class AgentLightningVLMRL(pl.LightningModule):
         # =============================
         # Update on failure samples
         # =============================
+        failure_samples = []
+        B = rewards_tensor.shape[0]
+        for g in range(self.G):
+            for b in range(B):
+                if failure_mask[b, g]:
+                    failure_samples.append((b, g))  
+
 
         total_loss    = torch.tensor(0.0, device=self.device)
         total_pg_loss = 0.0
-        num_tokens_total = 0
+        for (b, g) in failure_samples:
+            gen_output_g = all_gen_output[g]
+            old_lp_bg = all_logprobs_old_tokens[g][b:b+1].to(self.device) # [1, ResponseLen]
 
-        for sample in num_failures:
+            from dataclasses import replace 
+            gen_output_single = NegDriveGenOutput(
+                full_ids=gen_output_g.full_ids[b:b+1],  # [1, SeqLen]
+                attention_mask=gen_output_g.attention_mask[b:b+1],  # [1, SeqLen]
+                response_start_idx=gen_output_g.response_start_idx,    # scalar, unchanged 
+                text_actions=None
+            )
             
+            # ── Slice pixel_values for this sample only ───────────────────────
+            # pixel_values_cat is [TotalPatches, C, H, W]
+            # need to extract patches belonging to sample b
+            start_patch = sum(num_patches_list[:b])
+            end_patch   = start_patch + num_patches_list[b]
+            pv_single   = pixel_values_cat[start_patch:end_patch]    # [NumPatches_b, C, H, W]
 
-        for g in range(self.G):
-            failure_mask_g = failure_mask[:, g]         # [B] bool
-            # Skip this rollout if no failures — no gradient needed
-            if not failure_mask_g.any():
-                continue
-
-            rewards_g      = rewards_tensor[:, g]       # [B] {-1.0, 1.0}
-            gen_output_g   = all_gen_output[g]
-            old_log_probs_g    = all_logprobs_old_tokens[g].to(self.device)  # [B, ResponseLen]
-
-            # ── Per-token log probs WITH gradients ───────────────────────
-            # This is where gradient flows back into VLM LoRA weights
+            # ── Forward pass: B=1, avoids OOM ────────────────────────────────
             with torch.autocast("cuda", dtype=torch.bfloat16):
-                token_log_probs, eos_mask = compute_response_logprobs_tokens(
+                token_lp_b, eos_mask_b = compute_response_logprobs_tokens(
                     model=self.agent.vlm.model,
-                    pixel_values=pixel_values_cat,
-                    generation_output=gen_output_g,
-                )
-            # token_log_probs: [B, ResponseLen]  ,has grad_fn 
-            # eos_mask:        [B, ResponseLen]  1=real token, 0=pad
-            del gen_output_g
-            torch.cuda.empty_cache()
+                    pixel_values=pv_single,               # [NumPatches_b, C, H, W]
+                    generation_output=gen_output_single,  # B=1
+                )  # [1, ResponseLen]  ← has grad_fn      
 
-            # ── NSR loss: ratio clipping, raw reward=-1, no normalization ─
-            # For failure samples: loss = max(ratio, clip(ratio, 1-ε, 1+ε))
-            # Minimizing this reduces π_θ/π_old → policy moves away from bad text
-            log_ratio     = token_log_probs - old_log_probs_g.detach()  # [B, T]
-            ratio         = torch.exp(log_ratio)                        # [B, T]
-            ratio_clipped = torch.clamp(ratio, 1 - 0.2, 1 + 0.2)
+            print("单样本 logprob 计算成功")      
 
-            # NSR: reward=-1, so loss = max(ratio, ratio_clipped) per token
-            per_token_loss = torch.max(ratio, ratio_clipped)            # [B, T]
+            # NSR loss
+            log_ratio_b     = token_lp_b - old_lp_bg.detach()
+            ratio_b         = torch.exp(log_ratio_b)
+            ratio_clipped_b = torch.clamp(ratio_b, 1 - 0.2, 1 + 0.2)
 
-            # Apply masks: zero out padding AND success samples
-            failure_expanded = failure_mask_g.unsqueeze(-1).float()     # [B, 1]
-            per_token_loss   = per_token_loss * eos_mask * failure_expanded  # [B, T]
+            per_token_loss_b = torch.max(ratio_b, ratio_clipped_b) * eos_mask_b
+            num_tokens_b     = eos_mask_b.sum().clamp(min=1)
+            loss_b           = per_token_loss_b.sum() / num_tokens_b   # scalar ✅
 
-            # Mean over real failure tokens (not batch size — per paper)
-            num_tokens = (eos_mask * failure_expanded).sum().clamp(min=1)
-            loss_g     = per_token_loss.sum() / num_tokens
+            total_loss    = total_loss + loss_b / num_failures
+            total_pg_loss += loss_b.item() / num_failures
 
-            total_loss    = total_loss + loss_g / self.G
-            total_pg_loss += loss_g.item() / self.G
-
-            del token_log_probs, eos_mask, old_log_probs_g, per_token_loss, loss_g
-            torch.cuda.empty_cache()
 
         # Final cleanup
         del rewards_tensor, failure_mask, all_rewards, all_logprobs_old_tokens
