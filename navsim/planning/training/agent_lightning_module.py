@@ -581,8 +581,11 @@ class AgentLightningVLMRL(pl.LightningModule):
             del all_gen_output, all_logprobs_old_tokens, rewards_tensor, failure_mask
             torch.cuda.empty_cache()
             print("没有负样本")
-            return self._zero_loss()
 
+            if self.automatic_optimization:
+                return self._zero_loss()
+            else:
+                return True
 
         # =============================
         # Update on failure samples
@@ -640,10 +643,16 @@ class AgentLightningVLMRL(pl.LightningModule):
 
             per_token_loss_b = torch.max(ratio_b, ratio_clipped_b) * eos_mask_b
             num_tokens_b     = eos_mask_b.sum().clamp(min=1)
-            loss_b           = per_token_loss_b.sum() / num_tokens_b   # scalar 
 
-            total_loss    = total_loss + loss_b / num_failures
-            total_pg_loss += loss_b.item() / num_failures
+
+            if self.automatic_optimization:
+                loss_b = per_token_loss_b.sum() / num_tokens_b   # scalar 
+                total_loss    = total_loss + loss_b / num_failures
+                total_pg_loss += loss_b.item() / num_failures
+            else:
+                loss_b = per_token_loss_b.sum() / num_tokens_b / num_failures   # scaled (1/num_failures) loss 
+                self.manual_backward(loss_b)
+                total_pg_loss += loss_b.item() / num_failures
 
             # After loss computation:
             self._log_vram(f"【显存检查 06- Failure Sample】after_loss_b{b}_g{g}")
@@ -661,14 +670,17 @@ class AgentLightningVLMRL(pl.LightningModule):
             pass
         torch.cuda.empty_cache()
 
+
         # ── Logging ───────────────────────────────────────────────────────
         self.log(f"{logging_prefix}/pg_loss", total_pg_loss,
                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
-        self.log(f"{logging_prefix}/total_loss", total_loss.item(),
+        
+        if self.automatic_optimization:
+            self.log(f"{logging_prefix}/total_loss", total_loss.item(),
                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
-
-
-        return total_loss
+            return total_loss
+        else:
+            return False 
 
 
     def unpack_features(self, features: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, List[str], List[int]]:
@@ -779,8 +791,23 @@ class AgentLightningVLMRL(pl.LightningModule):
         :param batch_idx: index of batch (ignored)
         :return: scalar loss
         """
+        if self.automatic_optimization:
+            return self._step(batch, "train")
 
-        return self._step(batch, "train")
+        else:
+            opt = self.optimizers()
+            sch = self.lr_schedulers()
+
+            opt.zero_grad()
+            skipped = self._step(batch, "train")
+            if skipped:
+                return 
+            
+            # torch.nn.utils.clip_grad_norm_(self.agent.vlm.parameters(), max_norm=1.0)    TODO 这个好像没办法 
+
+            opt.step()
+            sch.step()
+
 
 
     def _zero_loss(self) -> torch.Tensor:
@@ -841,33 +868,33 @@ class AgentLightningVLMRL(pl.LightningModule):
 
 
 
-# def get_realtime_vram(device=0):
-#     """Return Current VRAM usage for the specified GPU device."""
+def get_realtime_vram(device=0):
+    """Return Current VRAM usage for the specified GPU device."""
 
-#     free, total = torch.cuda.mem_get_info(device)
-#     allocated = torch.cuda.memory_allocated(device)
-#     reserved  = torch.cuda.memory_reserved(device)
+    free, total = torch.cuda.mem_get_info(device)
+    allocated = torch.cuda.memory_allocated(device)
+    reserved  = torch.cuda.memory_reserved(device)
 
-#     return {
-#         "total_gb":   total / 1024**3,
-#         "free_gb":    free / 1024**3,
-#         "allocated_gb": allocated / 1024**3,  # 实际被 tensor 占用的显存
-#         "reserved_gb":  reserved / 1024**3,   # PyTorch 缓存池预留（含碎片）
-#         "used_pct":   (1 - free / total) * 100
-#     }
+    return {
+        "total_gb":   total / 1024**3,
+        "free_gb":    free / 1024**3,
+        "allocated_gb": allocated / 1024**3,  # 实际被 tensor 占用的显存
+        "reserved_gb":  reserved / 1024**3,   # PyTorch 缓存池预留（含碎片）
+        "used_pct":   (1 - free / total) * 100
+    }
 
 
-# class VRAMMonitor(Callback):
-#     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
-#         status = get_realtime_vram(pl_module.device.index)
+class VRAMMonitor(Callback):
+    def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
+        status = get_realtime_vram(pl_module.device.index)
 
-#         print(f"Batch 批次：{batch_idx} \
-#               已用: {status['allocated_gb']:.2f}GB \
-#               | 剩余: {status['free_gb']:.2f}GB \
-#                 | 利用率: {status['used_pct']:.1f}%")
+        print(f"Batch 批次：{batch_idx} \
+              已用: {status['allocated_gb']:.2f}GB \
+              | 剩余: {status['free_gb']:.2f}GB \
+                | 利用率: {status['used_pct']:.1f}%")
 
-#         pl_module.log("vram/allocated_gb", status["allocated_gb"], prog_bar=True, sync_dist=True)
-#         pl_module.log("vram/free_gb", status["free_gb"], prog_bar=True, sync_dist=True)
-#         pl_module.log("vram/used_pct", status["used_pct"], prog_bar=True, sync_dist=True)
+        pl_module.log("vram/allocated_gb", status["allocated_gb"], prog_bar=True, sync_dist=True)
+        pl_module.log("vram/free_gb", status["free_gb"], prog_bar=True, sync_dist=True)
+        pl_module.log("vram/used_pct", status["used_pct"], prog_bar=True, sync_dist=True)
 
 

@@ -44,9 +44,6 @@ print(torch.__version__, torch.version.cuda)
 
 
 
-
-
-
 def custom_collate_fn(
         batch: List[
             Tuple[
