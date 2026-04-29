@@ -98,7 +98,7 @@ export MASTER_PORT=${MASTER_PORT}
 export PORT=${PORT}
 
 echo "GPUS: ${GPUS}"
-# export CUDA_LAUNCH_BLOCKING=1 This is only for debugging and should not set when training 
+export CUDA_LAUNCH_BLOCKING=1   # This is only for debugging and should not set when training 
 
 
 torchrun \

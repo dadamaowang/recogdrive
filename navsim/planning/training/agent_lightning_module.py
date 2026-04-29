@@ -576,16 +576,6 @@ class AgentLightningVLMRL(pl.LightningModule):
         self.log(f"{logging_prefix}/num_failures", float(num_failures),
                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
-        # If no failures, skip optimizer step — nothing to learn from
-        if num_failures == 0:
-            del all_gen_output, all_logprobs_old_tokens, rewards_tensor, failure_mask
-            torch.cuda.empty_cache()
-            print("没有负样本")
-
-            if self.automatic_optimization:
-                return self._zero_loss()
-            else:
-                return True
 
         # =============================
         # Update on failure samples
@@ -597,10 +587,56 @@ class AgentLightningVLMRL(pl.LightningModule):
                 if failure_mask[b, g]:
                     failure_samples.append((b, g))  
 
+        # Synchronize across ranks
+        num_failures_local = len(failure_samples)
+
+        # Check if ANY rank has failures
+        any_failures_tensor = torch.tensor(float(num_failures_local > 0), device=self.device)
+        torch.distributed.all_reduce(any_failures_tensor, op=torch.distributed.ReduceOp.SUM)    
+
+        if any_failures_tensor.item() == 0:
+            # No rank has failures, all skip together
+            del all_gen_output, all_logprobs_old_tokens, rewards_tensor, failure_mask
+            torch.cuda.empty_cache()
+
+            print("没有负样本")
+
+            if self.automatic_optimization:
+                return self._zero_loss()
+            else:
+                return True
+        
+        # Find max failure count across ranks — all ranks loop this many times
+        max_failures_tensor = torch.tensor(float(num_failures_local), device=self.device)
+        torch.distributed.all_reduce(max_failures_tensor, op=torch.distributed.ReduceOp.MAX)
+        num_iterations = int(max_failures_tensor.item())
+
+        # Pad with None so all ranks do same number of backward() calls
+        while len(failure_samples) < num_iterations:
+            failure_samples.append(None)
+
+        # Use global num_failures for loss normalization (not local)
+        global_num_failures_tensor = torch.tensor(float(num_failures_local), device=self.device)
+        torch.distributed.all_reduce(global_num_failures_tensor, op=torch.distributed.ReduceOp.SUM)
+        global_num_failures = max(global_num_failures_tensor.item(), 1)
+
 
         total_loss    = torch.tensor(0.0, device=self.device)
         total_pg_loss = 0.0
-        for (b, g) in failure_samples:
+        for sample in failure_samples:
+
+            if sample is None:
+                # TODO 之后添加了 flash attention 还是得手动回传梯度，所以后边都手动吧
+
+                # Dummy backward to stay synchronized with other ranks
+                dummy = sum(p.sum() * 0.0 for p in self.agent.vlm.parameters()
+                    if p.requires_grad)
+                self.manual_backward(dummy)
+                torch.cuda.empty_cache()
+                continue
+
+
+            (b, g) = sample
             # Before failure sample forward pass:
             self._log_vram(f"【显存检查 04- Failure Sample】before_forward_b{b}_g{g}")
 
@@ -647,12 +683,12 @@ class AgentLightningVLMRL(pl.LightningModule):
 
             if self.automatic_optimization:
                 loss_b = per_token_loss_b.sum() / num_tokens_b   # scalar 
-                total_loss    = total_loss + loss_b / num_failures
-                total_pg_loss += loss_b.item() / num_failures
+                total_loss    = total_loss + loss_b / global_num_failures
+                total_pg_loss += loss_b.item() / global_num_failures
             else:
-                loss_b = per_token_loss_b.sum() / num_tokens_b / num_failures   # scaled (1/num_failures) loss 
+                loss_b = per_token_loss_b.sum() / num_tokens_b / global_num_failures   # scaled (1/global_num_failures) loss 
                 self.manual_backward(loss_b)
-                total_pg_loss += loss_b.item() / num_failures
+                total_pg_loss += loss_b.item() / global_num_failures
 
             # After loss computation:
             self._log_vram(f"【显存检查 06- Failure Sample】after_loss_b{b}_g{g}")
@@ -662,7 +698,7 @@ class AgentLightningVLMRL(pl.LightningModule):
 
 
         # Final cleanup
-        del rewards_tensor, failure_mask, all_rewards, all_logprobs_old_tokens
+        del rewards_tensor, failure_mask, all_logprobs_old_tokens
         del pixel_values_cat, questions, num_patches_list, history_trajectory, diff_input
         try:
             del all_gen_outputs     # free any remaining gen_outputs
