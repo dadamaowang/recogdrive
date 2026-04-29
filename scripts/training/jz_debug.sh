@@ -1,7 +1,6 @@
 
 nvidia-smi
 
-
 export NAVSIM_EXP_ROOT="/UserData/xnq/navsim_workspace/exp"     # exp log 存放; cache_dataset 位置存放
 
 export NAVSIM_DEVKIT_ROOT="/root/recogdrive"
@@ -13,7 +12,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   # data
-EXP_NAME=exp_0427
+EXP_NAME=exp_0429
 
 
 # --------
@@ -100,7 +99,7 @@ export PORT=${PORT}
 echo "GPUS: ${GPUS}"
 export CUDA_LAUNCH_BLOCKING=1   # This is only for debugging and should not set when training 
 
-echo "当前节点 Rank=$MLP_ROLE_INDEX | 连接 Master=$MLP_WORKER_0_HOST:$MLP_WORKER_0_PORT | 单机进程数=${GPUS}"
+
 torchrun \
     --nnodes=1 \
     --nproc_per_node=${GPUS} \
@@ -110,9 +109,9 @@ torchrun \
     cache_path=null \
     agent=negdrive_agent \
     force_cache_computation=False \
-    dataloader.params.batch_size=2 \
+    dataloader.params.batch_size=32 \
     trainer.params.max_epochs=10 \
-    trainer.params.devices=2 \
+    trainer.params.devices=${GPUS} \
     trainer.params.strategy="ddp_find_unused_parameters_false" \
     agent.metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache_train" \
     agent.vlm_path="/UserData/xnq/my_models/Policy/ReCogDrive-VLM-2B" \

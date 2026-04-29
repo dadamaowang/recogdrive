@@ -1,23 +1,31 @@
 
+# 4卡效率测试
+
 nvidia-smi
 
+export NAVSIM_EXP_ROOT="/UserData/xnq/navsim_workspace/exp"     # exp log 存放; cache_dataset 位置存放
 
-export NAVSIM_EXP_ROOT="/UserData/xnq/navsim_workspace/exp"     
 export NAVSIM_DEVKIT_ROOT="/root/recogdrive"
 export OPENSCENE_DATA_ROOT="/UserData/xnq/navsim_workspace/dataset"
+# export OPENSCENE_DATA_ROOT="/UserData/xnq/nav_mini"
 export NUPLAN_MAPS_ROOT="$OPENSCENE_DATA_ROOT/maps"
 export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
-TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=pre_exp_2b_01
+# export CACHE_PATH=null
 
-export NCCL_IB_DISABLE=0
-export NCCL_P2P_DISABLE=0
-export NCCL_SHM_DISABLE=0
+TRAIN_TEST_SPLIT=navtrain   # data
+EXP_NAME=test_0429
+
+
+export HYDRA_FULL_ERROR=1
+export TORCH_DISTRIBUTED_DEBUG=DETAIL
+export TORCHELASTIC_ERROR_FILE=tmp_error.json
+
+
 
 export MASTER_PORT=63669
 export PORT=63665
-export GPUS=2
+export GPUS=4
 export GPUS_PER_NODE=$GPUS
 
 MASTER_PORT=${MASTER_PORT:-63669}
@@ -33,9 +41,6 @@ echo "GPUS: ${GPUS}"
 
 torchrun \
     --nnodes=1 \
-    --node_rank=$MLP_ROLE_INDEX \
-    --master_addr=$MLP_WORKER_0_HOST \
-    --master_port=$MLP_WORKER_0_PORT \
     --nproc_per_node=${GPUS} \
     $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_negdrive.py \
     train_test_split=$TRAIN_TEST_SPLIT \
@@ -43,9 +48,9 @@ torchrun \
     cache_path=null \
     agent=negdrive_agent \
     force_cache_computation=False \
-    dataloader.params.batch_size=2 \
-    trainer.params.max_epochs=10 \
-    trainer.params.devices=2 \
+    dataloader.params.batch_size=8 \
+    trainer.params.max_epochs=2 \
+    trainer.params.devices=${GPUS} \
     trainer.params.strategy="ddp_find_unused_parameters_false" \
     agent.metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache_train" \
     agent.vlm_path="/UserData/xnq/my_models/Policy/ReCogDrive-VLM-2B" \
