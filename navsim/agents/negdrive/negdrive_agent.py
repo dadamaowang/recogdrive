@@ -40,18 +40,23 @@ from .negdrive_actionhead import NegDriveDiffusionPlannerConfig, NegDriveDiffusi
 
 class NegDriveAgent(AbstractAgent):
 
-    def __init__(   # TODO: init 的参数根据具体情况设定
+    def __init__(   
         self,
         *,
         trajectory_sampling: TrajectorySampling,    # TODO
 
+        metric_cache_path: Optional[str] = None,    # for validation 
+
+
+
         # ========== VLM (POLICY) ==========
         vlm_path: str,
         vlm_type: str = "internvl",
-        vlm_size: str = "large",
-        train_vlm: bool = True,                 
-        cache_hidden_state: bool = False,       # TODO must be False for RL
-        cache_mode: bool = False,   # TODO cache_mode ? 
+        vlm_size: str = "large",       
+        vlm_lr: float = 1e-5,        
+
+
+
 
         # ========== DIFFUSION (DECODER) ==========
         dit_type: str = "small",
@@ -60,13 +65,11 @@ class NegDriveAgent(AbstractAgent):
         diff_path: Optional[str] = None,
 
         # ========== RL / GRPO ==========
-        metric_cache_path: Optional[str] = None,    # TODO 
+
         reward_scale: float = 1.0,
         entropy_coef: float = 0.01,
         kl_coef: float = 0.0,
 
-        # ========== OPTIM ==========
-        lr: float = 1e-5,
 
         # ========== RUNTIME ==========
         device: Optional[str] = None,
@@ -76,33 +79,27 @@ class NegDriveAgent(AbstractAgent):
         # -----------------------
         # core attributes
         # -----------------------
-        self._trajectory_sampling = trajectory_sampling     # TODO
+        self._trajectory_sampling = trajectory_sampling     
+        self.metric_cache_path = metric_cache_path
         self.device = device or f"cuda:{int(os.getenv('LOCAL_RANK', 0))}"
 
-        self.cache_mode = cache_mode
-        self.cache_hidden_state = cache_hidden_state
-
-        self.metric_cache_path = metric_cache_path
 
         # -----------------------
         # VLM (policy network)
-        # -----------------------
-        if self.cache_hidden_state or self.cache_mode:  # TODO
-            raise ValueError(
-                "cache_hidden_state=True or cache_mode=True is incompatible with VLM RL training "
-            )
-        
+        # -----------------------        
         self.vlm_path = vlm_path
         self.vlm_type = vlm_type   
         self.vlm_size = vlm_size    
-        self.train_vlm = train_vlm
 
         self.vlm = NegDriveBackbone(     # TODO ori: ReCogDriveBackbone
             model_type=self.vlm_type,
             checkpoint_path=self.vlm_path,
             device=self.device,
         )
+
+        self._lr = vlm_lr
         
+
         # -----------------------
         # Diffusion planner (frozen)
         # -----------------------
@@ -152,14 +149,6 @@ class NegDriveAgent(AbstractAgent):
         else:
             raise NotImplementedError
 
-        # # optional planner checkpoint
-        # self.checkpoint_path = diff_checkpoint_path  # TODO
-        # # if checkpoint_path: 
-        # #     self._load_planner_checkpoint(checkpoint_path)  # TODO
-
-
-        # self.metric_cache_path = metric_cache_path TODO 
-
 
         # # -----------------------
         # # GRPO / RL parameters
@@ -167,14 +156,7 @@ class NegDriveAgent(AbstractAgent):
         # self.reward_scale = reward_scale
         # self.entropy_coef = entropy_coef
         # self.kl_coef = kl_coef
-
         # self.reference_policy_checkpoint = reference_policy_checkpoint
-        # self.metric_cache_path = metric_cache_path  # TODO
-
-        # -----------------------
-        # optimizer
-        # -----------------------
-        self._lr = lr
 
         # # -----------------------
         # # others TOOD
@@ -218,13 +200,13 @@ class NegDriveAgent(AbstractAgent):
 
     def get_feature_builders(self) -> List[AbstractFeatureBuilder]:
         return [NegDriveFeatureBuilder(   
-            cache_hidden_state=self.cache_hidden_state,
+            cache_hidden_state=False,
             # model_type=self.vlm_type,  # TODO 
             # checkpoint_path=self.vlm_path,
             model_type=None,
             checkpoint_path=None,
             device=self.device,
-            cache_mode=self.cache_mode,
+            cache_mode=False,
         )]
 
 
