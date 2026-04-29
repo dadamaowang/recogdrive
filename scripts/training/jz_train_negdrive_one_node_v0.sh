@@ -33,6 +33,9 @@ echo "GPUS: ${GPUS}"
 
 torchrun \
     --nnodes=1 \
+    --node_rank=$MLP_ROLE_INDEX \
+    --master_addr=$MLP_WORKER_0_HOST \
+    --master_port=$MLP_WORKER_0_PORT \
     --nproc_per_node=${GPUS} \
     $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_negdrive.py \
     train_test_split=$TRAIN_TEST_SPLIT \

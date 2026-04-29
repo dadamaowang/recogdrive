@@ -100,7 +100,7 @@ export PORT=${PORT}
 echo "GPUS: ${GPUS}"
 export CUDA_LAUNCH_BLOCKING=1   # This is only for debugging and should not set when training 
 
-
+echo "当前节点 Rank=$MLP_ROLE_INDEX | 连接 Master=$MLP_WORKER_0_HOST:$MLP_WORKER_0_PORT | 单机进程数=${GPUS}"
 torchrun \
     --nnodes=1 \
     --nproc_per_node=${GPUS} \
