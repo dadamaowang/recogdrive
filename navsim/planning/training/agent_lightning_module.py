@@ -435,7 +435,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         super().__init__()
         self.agent = agent
 
-        self.G = 3  # TODO setting
+        self.G = agent.per_sample_rollout
 
         self.automatic_optimization = False
 

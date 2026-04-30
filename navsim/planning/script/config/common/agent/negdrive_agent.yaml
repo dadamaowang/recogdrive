@@ -19,3 +19,5 @@ diff_sampling_method: 'ddim'
 
 metric_cache_path: ''
 
+per_sample_rollout: 4
+

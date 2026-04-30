@@ -31,17 +31,10 @@ from navsim.planning.training.dataset import Dataset
 from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL, VRAMMonitor
 
 
-
-
 logger = logging.getLogger(__name__)
 
 CONFIG_PATH = "config/training"
 CONFIG_NAME = "default_training"   
-
-
-print("检查：")
-print(torch.__version__, torch.version.cuda)
-
 
 
 def custom_collate_fn(
@@ -151,18 +144,13 @@ def custom_collate_fn(
 
 
 
-
-
-
-def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Dataset]: # TODO
+def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Dataset]:
     """
     Builds training and validation datasets from omega config 
     :param cfg: omegaconf dictionary
     :param agent: interface of agents in NAVSIM
     :return: tuple for training and validation dataset
 
-    REMARKS:
-        - 如果是 navtrain, 这里训练数据 build 来自 'trainval' 目录
     """
     
     train_scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
@@ -243,55 +231,23 @@ def main(cfg: DictConfig) -> None:
     pl.seed_everything(cfg.seed, workers=True)
     logger.info(f"Global Seed set to {cfg.seed}")
 
-    logger.info(f"Path where all results are stored: {cfg.output_dir}") # 就在 NAVSIM_EXP_ROOT 下
+    logger.info(f"Path where all results are stored: {cfg.output_dir}")
 
     logger.info("Building Agent")
-    agent: AbstractAgent = instantiate(cfg.agent)   # TODO 
+    agent: AbstractAgent = instantiate(cfg.agent) 
 
-    # agent.initialize() 
-
-    logger.info("Building Lightning Module")    # TODO write Lightning module
+    logger.info("Building Lightning Module")    
     lightning_module = AgentLightningVLMRL(
         agent=agent,
     )
 
-    if cfg.use_cache_without_dataset:   # If training VLM backbone, suggest(should) not use cache.
-        raise NotImplementedError
-
-        # logger.info("Using cached data without building SceneLoader")
-        # assert (
-        #     not cfg.force_cache_computation
-        # ), "force_cache_computation must be False when using cached data without building SceneLoader"
-        # assert (
-        #     cfg.cache_path is not None
-        # ), "cache_path must be provided when using cached data without building SceneLoader"
-
-        # # TODO 
-        # # (1) CacheOnlyDataset 形式
-        # # (2) agent get_feature_builders 和 get_target_builders
-
-        # # train_data = CacheOnlyDataset(  
-        # #     cache_path=cfg.cache_path,
-        # #     feature_builders=agent.get_feature_builders(),
-        # #     target_builders=agent.get_target_builders(),
-        # #     log_names=cfg.train_logs,
-        # # )
-        # # val_data = CacheOnlyDataset(
-        # #     cache_path=cfg.cache_path,
-        # #     feature_builders=agent.get_feature_builders(),
-        # #     target_builders=agent.get_target_builders(),
-        # #     log_names=cfg.val_logs,
-        # # )
-        # pdb.set_trace()
-    else:    
-        logger.info("Building SceneLoader")
-        train_data, val_data = build_datasets(cfg, agent)
-
+    logger.info("Building SceneLoader")
+    train_data, val_data = build_datasets(cfg, agent)
 
     logger.info("Building DataLoader")
     train_dataloader = DataLoader(
         train_data,
-        collate_fn=custom_collate_fn,   # TODO to print
+        collate_fn=custom_collate_fn, 
         **cfg.dataloader.params,
         shuffle=True
     )

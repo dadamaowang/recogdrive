@@ -26,6 +26,8 @@ dataloader:
     num_workers: 8  # number of workers for data loading
     pin_memory: true  # pin memory for faster GPU transfer
     prefetch_factor: 2  # number of samples loaded in advance by each worker
+    drop_last: true  # drop the last incomplete batch if the dataset size is not divisible by the batch size
+    persistent_workers: true  # keep workers alive between epochs for faster data loading
 
 trainer:
   params:

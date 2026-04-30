@@ -48,15 +48,11 @@ class NegDriveAgent(AbstractAgent):
         metric_cache_path: Optional[str] = None,    # for validation 
 
 
-
         # ========== VLM (POLICY) ==========
         vlm_path: str,
         vlm_type: str = "internvl",
         vlm_size: str = "large",       
         vlm_lr: float = 1e-5,        
-
-
-
 
         # ========== DIFFUSION (DECODER) ==========
         dit_type: str = "small",
@@ -65,7 +61,7 @@ class NegDriveAgent(AbstractAgent):
         diff_path: Optional[str] = None,
 
         # ========== RL / GRPO ==========
-
+        per_sample_rollout: int = 4,
         reward_scale: float = 1.0,
         entropy_coef: float = 0.01,
         kl_coef: float = 0.0,
@@ -97,9 +93,7 @@ class NegDriveAgent(AbstractAgent):
             device=self.device,
         )
 
-        self._lr = vlm_lr
         
-
         # -----------------------
         # Diffusion planner (frozen)
         # -----------------------
@@ -150,9 +144,14 @@ class NegDriveAgent(AbstractAgent):
             raise NotImplementedError
 
 
-        # # -----------------------
-        # # GRPO / RL parameters
-        # # -----------------------
+        # -----------------------
+        # GRPO / RL parameters
+        # -----------------------
+        self._lr = vlm_lr
+        self.per_sample_rollout = per_sample_rollout
+
+
+
         # self.reward_scale = reward_scale
         # self.entropy_coef = entropy_coef
         # self.kl_coef = kl_coef

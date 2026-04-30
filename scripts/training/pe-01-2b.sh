@@ -11,12 +11,12 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=pre_exp_2b_03
+EXP_NAME=test_0430_01
 
 
 export MASTER_PORT=63669
 export PORT=63665
-export GPUS=4
+export GPUS=2
 export GPUS_PER_NODE=$GPUS
 
 MASTER_PORT=${MASTER_PORT:-63669}
@@ -39,6 +39,7 @@ torchrun \
     agent=negdrive_agent \
     cache_path=null \
     force_cache_computation=False \
+    seed=42 \
     dataloader.params.batch_size=8 \
     trainer.params.max_epochs=2 \
     trainer.params.devices=${GPUS} \
@@ -47,5 +48,6 @@ torchrun \
     agent.vlm_path="/UserData/xnq/my_models/Policy/ReCogDrive-VLM-2B" \
     agent.vlm_size="small" \
     agent.vlm_lr=2e-5 \
-    agent.diff_path="/UserData/xnq/my_models/Planner/ReCogDrive-2B-RL/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"
+    agent.diff_path="/UserData/xnq/my_models/Planner/ReCogDrive-2B-RL/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
+    agent.per_sample_rollout=4
 
