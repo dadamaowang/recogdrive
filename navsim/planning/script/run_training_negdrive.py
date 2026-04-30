@@ -150,10 +150,16 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
     :param cfg: omegaconf dictionary
     :param agent: interface of agents in NAVSIM
     :return: tuple for training and validation dataset
+    """
+    train_scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
 
     """
-    
-    train_scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
+    SceneFilter 目前用到的 cfg：
+    /root/recogdrive/navsim/planning/script/config/common/train_test_split/scene_filter/navtrain.yaml
+
+    """
+
+    # DOING
 
     if train_scene_filter.log_names is not None:
         train_scene_filter.log_names = [
