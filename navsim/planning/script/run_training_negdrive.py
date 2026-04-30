@@ -247,8 +247,11 @@ def main(cfg: DictConfig) -> None:
         agent=agent,
     )
 
-    logger.info("Building SceneLoader")
+    logger.info("Building SceneLoader and Dataset...")
     train_data, val_data = build_datasets(cfg, agent)
+
+
+    # DOING
 
     logger.info("Building DataLoader")
     train_dataloader = DataLoader(
