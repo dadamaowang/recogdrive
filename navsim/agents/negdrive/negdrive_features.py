@@ -7,7 +7,7 @@
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
 @Status  :   DOING
-@Desc    :   None
+@Desc    :   数据预处理，特征构建和目标构建
 '''
 
 from typing import Dict, Optional
@@ -32,11 +32,9 @@ def format_number(n, decimal_places=2):
 
 class NegDriveFeatureBuilder(AbstractFeatureBuilder):
     def __init__(self,
-                 cache_hidden_state: bool = False,
-                 model_type: Optional[str] = None,
-                 checkpoint_path: Optional[str] = None,
-                 device: str = "cuda",
-                 cache_mode: bool = False, ):
+                #  cache_hidden_state: bool = False,
+                #   vlm_path: Optional[str] = None,
+                 ):
         """
         Initializes the negdrive feature builder.
         
@@ -52,21 +50,10 @@ class NegDriveFeatureBuilder(AbstractFeatureBuilder):
             model_type (str, optional): The type of model to load ('internvl' or 'qwen'). Required if cache_hidden_state is True.
             checkpoint_path (str, optional): Path to the model checkpoint. Required if cache_hidden_state is True.
             device (str): The device to load the model onto.
+
+        TODO : 测试的时候考虑 cache ? 
         """
         super().__init__()
-        self.cache_hidden_state = cache_hidden_state
-        self.backbone = None
-        self.cache_mode = cache_mode
-
-        if self.cache_hidden_state and self.cache_mode:
-            raise NotImplementedError
-            # if not model_type or not checkpoint_path:
-            #     raise ValueError("In online mode (cache_hidden_state=True), `model_type` and `checkpoint_path` must be provided.")
-            # self.backbone = RecogDriveBackbone(
-            #     model_type=model_type,
-            #     checkpoint_path=checkpoint_path,
-            #     device=device
-            # )
 
     def get_unique_name(self) -> str:   # TODO
         return "negdrive_feature"
@@ -86,18 +73,17 @@ class NegDriveFeatureBuilder(AbstractFeatureBuilder):
             torch.tensor(ego_statuses[-1].ego_acceleration, dtype=torch.float32)
         ], dim=-1)
 
-        if not self.cache_hidden_state:
-            image_path = str(cameras[-1].cam_f0.image)            
-            path_as_ordinals = [ord(char) for char in image_path]          
-            path_tensor = torch.tensor(path_as_ordinals, dtype=torch.long)            
-            return {
-                "history_trajectory": history_trajectory.cpu(),
-                "high_command_one_hot": high_command_one_hot.cpu(),
-                "status_feature": status_feature.cpu(),
-                "image_path_tensor": path_tensor.cpu(),
-            }
-        else:
-            raise NotImplementedError  # 这个应该不需要了
+        image_path = str(cameras[-1].cam_f0.image)            
+        path_as_ordinals = [ord(char) for char in image_path]          
+        path_tensor = torch.tensor(path_as_ordinals, dtype=torch.long)            
+        return {
+            "history_trajectory": history_trajectory.cpu(),
+            "high_command_one_hot": high_command_one_hot.cpu(),
+            "status_feature": status_feature.cpu(),
+            "image_path_tensor": path_tensor.cpu(),
+        }
+        # else:
+        #     raise NotImplementedError  # 这个应该不需要了
             # if self.backbone is None:
             #     raise RuntimeError("FeatureBuilder is in online mode, but the backbone was not initialized.")
 

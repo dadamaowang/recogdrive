@@ -190,24 +190,20 @@ class NegDriveAgent(AbstractAgent):
 
 
     def get_sensor_config(self) -> SensorConfig:
+        """暂时不用管"""
         return SensorConfig.build_all_sensors(include=[0, 1, 2, 3])
 
 
     def get_target_builders(self) -> List[AbstractTargetBuilder]:
+        """暂时不用管"""
         return [NegDriveTrajectoryTargetBuilder(trajectory_sampling=self._trajectory_sampling)]
 
 
     def get_feature_builders(self) -> List[AbstractFeatureBuilder]:
+        """test 的时候可能先 cache, 看情况；"""
         return [NegDriveFeatureBuilder(   
-            cache_hidden_state=False,
-            # model_type=self.vlm_type,  # TODO 
-            # checkpoint_path=self.vlm_path,
-            model_type=None,
-            checkpoint_path=None,
-            device=self.device,
-            cache_mode=False,
+            # cache_hidden_state=False,
         )]
-
 
     def forward(self, 
                 features: Dict[str, torch.Tensor],

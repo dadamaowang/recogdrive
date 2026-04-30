@@ -157,6 +157,9 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
     SceneFilter 目前用到的 cfg：
     /root/recogdrive/navsim/planning/script/config/common/train_test_split/scene_filter/navtrain.yaml
 
+    其中，train_logs, val_logs 划分：
+    /root/recogdrive/navsim/planning/script/config/training/default_train_val_test_log_split.yaml
+
     """
 
     if train_scene_filter.log_names is not None:
@@ -171,7 +174,6 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         val_scene_filter.log_names = [log_name for log_name in val_scene_filter.log_names if log_name in cfg.val_logs]
     else:
         val_scene_filter.log_names = cfg.val_logs
-        
 
     data_path = Path(cfg.navsim_log_path)
     sensor_blobs_path = Path(cfg.sensor_blobs_path)
@@ -181,7 +183,7 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         data_path=data_path,
         scene_filter=train_scene_filter,
         sensor_config=agent.get_sensor_config(),
-        load_image_path=True        # TODO not hard coded 
+        load_image_path=True       # NOTE 如果训 VLM, 这里需要设置成 True; 
     )
 
     val_scene_loader = SceneLoader(
@@ -196,24 +198,23 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         scene_loader=train_scene_loader,
         feature_builders=agent.get_feature_builders(),
         target_builders=agent.get_target_builders(),
-        cache_path=cfg.cache_path,
-        force_cache_computation=cfg.force_cache_computation,
-    )
+        cache_path=None,    # VLM fine-tine must None
+        force_cache_computation=False,  # VLM fine-tine must False
+    )   
 
     val_data = Dataset(
         scene_loader=val_scene_loader,
         feature_builders=agent.get_feature_builders(),
         target_builders=agent.get_target_builders(),
-        cache_path=cfg.cache_path,
-        force_cache_computation=cfg.force_cache_computation,
+        cache_path=None,
+        force_cache_computation=False,
     )
-    
+
+    print("数据集检查：")
+    print(f"训练数据集大小: {len(train_data)}")
+    print(f"验证数据集大小: {len(val_data)}")
+
     return train_data, val_data
-
-
-
-
-
 
 
 
