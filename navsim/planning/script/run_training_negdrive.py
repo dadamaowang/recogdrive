@@ -159,8 +159,6 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
 
     """
 
-    # DOING
-
     if train_scene_filter.log_names is not None:
         train_scene_filter.log_names = [
             log_name for log_name in train_scene_filter.log_names if log_name in cfg.train_logs
@@ -173,6 +171,7 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         val_scene_filter.log_names = [log_name for log_name in val_scene_filter.log_names if log_name in cfg.val_logs]
     else:
         val_scene_filter.log_names = cfg.val_logs
+        
 
     data_path = Path(cfg.navsim_log_path)
     sensor_blobs_path = Path(cfg.sensor_blobs_path)
