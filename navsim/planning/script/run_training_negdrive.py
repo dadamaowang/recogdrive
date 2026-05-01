@@ -23,6 +23,8 @@ from torch.utils.data import DataLoader
 import torch.distributed as dist
 
 import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import TensorBoardLogger
 
 from navsim.agents.abstract_agent import AbstractAgent
 from navsim.common.dataclasses import SceneFilter
@@ -187,6 +189,7 @@ def main(cfg: DictConfig) -> None:
     logger.info("Building Lightning Module")    
     lightning_module = AgentLightningVLMRL(
         agent=agent,
+        cfg=cfg
     )
 
     logger.info("Building SceneLoader and Dataset...")
@@ -210,7 +213,14 @@ def main(cfg: DictConfig) -> None:
 
     logger.info("Building Trainer")
     trainer = pl.Trainer(
-        **cfg.trainer.params,   # TODO 
+        **cfg.trainer.params, 
+        logger=TensorBoardLogger(   # TODO W&B log; 可视化等
+            save_dir=cfg.output_dir, 
+            name="tb",
+            version=cfg.experiment_name,
+            default_hp_metric=True,      
+            ), 
+        log_every_n_steps=1, 
         callbacks=[pl.callbacks.ModelCheckpoint
                    (monitor="val/loss_epoch",mode='min', save_top_k=5,every_n_epochs=1)])
         # callbacks: Train normally, but also run this checkpoint-saving logic during training.

@@ -45,8 +45,8 @@ torchrun \
     trainer.params.max_epochs=30 \
     trainer.params.devices=${GPUS} \
     trainer.params.strategy="ddp_find_unused_parameters_false" \
-    trainer.params.limit_train_batches=1 \
-    trainer.params.limit_val_batches=1 \
+    trainer.params.limit_train_batches=1.0 \
+    trainer.params.limit_val_batches=1.0 \
     agent.metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache_train" \
     agent.vlm_path="/UserData/xnq/my_models/Policy/ReCogDrive-VLM-2B" \
     agent.vlm_size="small" \

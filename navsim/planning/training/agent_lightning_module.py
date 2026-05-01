@@ -26,7 +26,7 @@ from navsim.agents.negdrive.utils.internvl_preprocess import load_image
 from navsim.agents.negdrive.utils.utils import format_number
 from navsim.agents.negdrive.negdrive_backbone import NegDriveGenOutput
 
-
+from omegaconf import DictConfig
 
 
 def decode_paths_from_tensor(path_tensor: torch.Tensor) -> List[str]:
@@ -427,12 +427,14 @@ def compute_negdrive_advantages(
 class AgentLightningVLMRL(pl.LightningModule):
     """Pytorch lightning wrapper for learnable vlm recogdrive agent."""
 
-    def __init__(self, agent: AbstractAgent):
+    def __init__(self, agent: AbstractAgent, cfg: DictConfig = None):
         """
         Initialise the lightning module wrapper.
         :param agent: agent interface in NAVSIM
         """
         super().__init__()
+        self.save_hyperparameters(cfg)
+
         self.agent = agent
 
         self.G = agent.per_sample_rollout
@@ -573,7 +575,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         """
         num_failures = failure_mask.sum().item()
         print(f"负样本数目：{num_failures}")
-        self.log(f"{logging_prefix}/num_failures", float(num_failures),
+        self.log(f"{logging_prefix}/num_failures", int(num_failures),
                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
 
@@ -901,6 +903,26 @@ class AgentLightningVLMRL(pl.LightningModule):
         print(f"[rank{rank}][{tag}] allocated={allocated:.2f}GB reserved={reserved:.2f}GB peak={max_alloc:.2f}GB")
         torch.cuda.reset_peak_memory_stats()   # reset peak after each checkpoint
 
+
+    # def on_validation_epoch_end(self):
+    # TODO
+    #     # 记录轨迹视频
+    #     if self.global_rank == 0:  # 仅主进程记录，避免多卡重复
+    #         video_tensor = make_trajectory_video(self.val_predictions)  # [B, C, T, H, W]
+    #         self.logger.experiment.add_video(
+    #             "val/trajectories", 
+    #             video_tensor, 
+    #             fps=10, 
+    #             global_step=self.global_step
+    #         )
+            
+    #         # 记录文本推理示例
+    #         sample_text = self.val_outputs[0]["reasoning"]
+    #         self.logger.experiment.add_text(
+    #             "val/reasoning_sample", 
+    #             sample_text, 
+    #             global_step=self.global_step
+    #         )
 
 
 
