@@ -10,7 +10,7 @@
 @Desc    :   None
 '''
 
-from typing import Tuple, List, Dict 
+from typing import Tuple, List, Dict, Any 
 from pathlib import Path
 import logging
 import os
@@ -37,10 +37,10 @@ CONFIG_PATH = "config/training"
 CONFIG_NAME = "default_training"   
 
 
-def custom_collate_fn(
+def negdrive_collate_fn(
         batch: List[
             Tuple[
-                Dict[str, torch.Tensor],    # features TODO 使用数据的时候看一眼是啥东西
+                Dict[str, torch.Tensor],    # features 
                 Dict[str, torch.Tensor],    # targets 
                 str     # tokens/prompt
                 ]]
@@ -53,16 +53,7 @@ def custom_collate_fn(
     high_command_one_hot = torch.stack([features['high_command_one_hot'] for features in features_list], dim=0).cpu()
     status_feature = torch.stack([features['status_feature'] for features in features_list], dim=0).cpu()   
 
-    # # TODO 这个训 VLM 的时候暂时不开；
-    # last_hidden_state = rnn_utils.pad_sequence(   # pad to same length   
-    #     [features['last_hidden_state'] for features in features_list],
-    #     batch_first=True,
-    #     padding_value=0.0
-    # ).clone().detach()
-    # # print('last_hidden_state')
-    # # print(last_hidden_state)
-
-    # extrace image_path_tensor # TODO 
+    # extrace image_path_tensor 
     image_path_tensor = torch.stack([features['image_path_tensor'] for features in features_list], dim=0).cpu() 
 
     # extract targets
@@ -72,76 +63,31 @@ def custom_collate_fn(
         'history_trajectory': history_trajectory,
         'high_command_one_hot': high_command_one_hot,
         'status_feature': status_feature,
-        # 'last_hidden_state': last_hidden_state,
         'image_path_tensor': image_path_tensor
     }
     targets = {
         'trajectory': trajectory
     }
 
+    print("========================================")
+    print("一个 Batch 内容检查")
+    print(f"history_trajectory shape: {history_trajectory.shape}")
+    print(f"history_trajectory sample: {history_trajectory[0]}")
+    print("----------------------------------------")
+    print(f"high_command_one_hot shape: {high_command_one_hot.shape}")
+    print(f"high_command_one_hot sample: {high_command_one_hot[0]}")
+    print("----------------------------------------")
+    print(f"status_feature shape: {status_feature.shape}")
+    print(f"status_feature sample: {status_feature[0]}")
+    print("----------------------------------------")
+    print(f"image_path_tensor shape: {image_path_tensor.shape}")
+    print(f"image_path_tensor sample: {image_path_tensor[0]}")
+    print("----------------------------------------")
+    print(f"trajectory shape: {trajectory.shape}")
+    print(f"trajectory sample: {trajectory[0]}")
+    print("========================================")
+
     return features, targets, tokens_list
-
-
-
-# def custom_collate_fn(        # TODO 不 cache 的写个新的
-#         batch: List[
-#             Tuple[
-#                 Dict[str, torch.Tensor],    # features TODO 使用数据的时候看一眼是啥东西
-#                 Dict[str, torch.Tensor],    # targets 
-#                 str     # tokens/prompt
-#                 ]]
-#     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor], List[str]]:
-
-#     features_list, targets_list, tokens_list = zip(*batch)
-
-#     # print('features_list:')
-#     # print(features_list)
-
-#     # print('targets_list:')
-#     # print(targets_list)
-
-#     # print('tokens_list')
-#     # print(tokens_list)
-
-#     # extract features 
-#     history_trajectory = torch.stack([features['history_trajectory'] for features in features_list], dim=0).cpu()
-#     # print('history_trajectory')
-#     # print(history_trajectory)
-
-#     high_command_one_hot = torch.stack([features['high_command_one_hot'] for features in features_list], dim=0).cpu()
-#     # print('high_command_one_hot')
-#     # print(high_command_one_hot)
-
-#     status_feature = torch.stack([features['status_feature'] for features in features_list], dim=0).cpu()   
-#     # print('status_feature')
-#     # print(status_feature)
-
-#     # # TODO 这个训 VLM 的时候暂时不开；
-#     # last_hidden_state = rnn_utils.pad_sequence(   # pad to same length   
-#     #     [features['last_hidden_state'] for features in features_list],
-#     #     batch_first=True,
-#     #     padding_value=0.0
-#     # ).clone().detach()
-#     # # print('last_hidden_state')
-#     # # print(last_hidden_state)
- 
-#     # extract targets
-#     trajectory = torch.stack([targets['trajectory'] for targets in targets_list], dim=0).cpu()
-#     # print('trajectory')
-#     # print(trajectory)
-
-#     features = {
-#         'history_trajectory': history_trajectory,
-#         'high_command_one_hot': high_command_one_hot,
-#         'status_feature': status_feature,
-#         # 'last_hidden_state': last_hidden_state
-#     }
-#     targets = {
-#         'trajectory': trajectory
-#     }
-
-#     return features, targets, tokens_list
-
 
 
 def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Dataset]:
@@ -198,7 +144,7 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         scene_loader=train_scene_loader,
         feature_builders=agent.get_feature_builders(),
         target_builders=agent.get_target_builders(),
-        cache_path=None,    # VLM fine-tine must None
+        cache_path=cfg.cache_path,    # VLM fine-tine must None(null)
         force_cache_computation=False,  # VLM fine-tine must False
     )   
 
@@ -206,13 +152,9 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         scene_loader=val_scene_loader,
         feature_builders=agent.get_feature_builders(),
         target_builders=agent.get_target_builders(),
-        cache_path=None,
+        cache_path=cfg.cache_path,
         force_cache_computation=False,
     )
-
-    print("数据集检查：")
-    print(f"训练数据集大小: {len(train_data)}")
-    print(f"验证数据集大小: {len(val_data)}")
 
     return train_data, val_data
 
@@ -250,40 +192,28 @@ def main(cfg: DictConfig) -> None:
     logger.info("Building SceneLoader and Dataset...")
     train_data, val_data = build_datasets(cfg, agent)
 
-
-    # DOING
-
     logger.info("Building DataLoader")
     train_dataloader = DataLoader(
         train_data,
-        collate_fn=custom_collate_fn, 
+        collate_fn=negdrive_collate_fn, 
         **cfg.dataloader.params,
         shuffle=True
     )
     logger.info("Num training samples: %d", len(train_data))
     val_dataloader = DataLoader(
         val_data,
-        collate_fn=custom_collate_fn,
+        collate_fn=negdrive_collate_fn,
         **cfg.dataloader.params,
         shuffle=False
     )
     logger.info("Num validation samples: %d", len(val_data))
 
-
     logger.info("Building Trainer")
     trainer = pl.Trainer(
-        **cfg.trainer.params,    
-        enable_checkpointing=False,
-        # callbacks=[VRAMMonitor()]
-        # fast_dev_run=True
-    )
-    # logger.info("Building Trainer")
-    # trainer = pl.Trainer(
-    #     **cfg.trainer.params,   # TODO 
-    #     callbacks=[pl.callbacks.ModelCheckpoint
-    #                (monitor="val/loss_epoch",mode='min', save_top_k=5,every_n_epochs=1)])
-    #     # callbacks: Train normally, but also run this checkpoint-saving logic during training.
-
+        **cfg.trainer.params,   # TODO 
+        callbacks=[pl.callbacks.ModelCheckpoint
+                   (monitor="val/loss_epoch",mode='min', save_top_k=5,every_n_epochs=1)])
+        # callbacks: Train normally, but also run this checkpoint-saving logic during training.
 
     logger.info("Starting Training")
     trainer.fit(
