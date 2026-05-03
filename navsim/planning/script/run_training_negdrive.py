@@ -80,24 +80,6 @@ def negdrive_collate_fn(
         'trajectory': trajectory
     }
 
-    print("========================================")
-    print("一个 Batch 内容检查")
-    print(f"history_trajectory shape: {history_trajectory.shape}")
-    print(f"history_trajectory sample: {history_trajectory[0]}")
-    print("----------------------------------------")
-    print(f"high_command_one_hot shape: {high_command_one_hot.shape}")
-    print(f"high_command_one_hot sample: {high_command_one_hot[0]}")
-    print("----------------------------------------")
-    print(f"status_feature shape: {status_feature.shape}")
-    print(f"status_feature sample: {status_feature[0]}")
-    print("----------------------------------------")
-    print(f"image_path_tensor shape: {image_path_tensor.shape}")
-    print(f"image_path_tensor sample: {image_path_tensor[0]}")
-    print("----------------------------------------")
-    print(f"trajectory shape: {trajectory.shape}")
-    print(f"trajectory sample: {trajectory[0]}")
-    print("========================================")
-
     return features, targets, tokens_list
 
 

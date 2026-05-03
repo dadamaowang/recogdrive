@@ -176,36 +176,6 @@ class NegDriveBackbone(nn.Module):
                                            lora_dropout=0.05)
 
 
-    # def set_finetune_mode(self, finetune: bool): 全量微调
-    #     """
-    #     Sets the training mode for the VLM and configures which parameters are trainable.
-    #     """
-    #     self.finetune = finetune
-    #     # self.finetune_llm_mode = mode
-
-    #     # 1. 首先冻结所有参数
-    #     for param in self.model.parameters():
-    #         param.requires_grad = False
-
-    #     if not self.finetune:
-    #         print("Setting VLM to evaluation mode with all parameters frozen.")
-    #         self.model.eval()
-    #         return
-
-    #     # 2. 如果需要微调，则解冻特定参数
-    #     print(f"Setting VLM to training mode. Finetuning attention and MLP layers.")
-    #     self.model.train()
-
-    #     # 解冻attention和MLP层的参数用于微调
-    #     trainable_keywords = ['attn', 'mlp']
-    #     trainable_count = 0
-    #     for name, param in self.model.named_parameters():
-    #         if any(keyword in name for keyword in trainable_keywords):
-    #             param.requires_grad = True
-    #             trainable_count += 1
-        
-    #     print(f"Unfroze {trainable_count} parameter groups for fine-tuning.")
-
     def _apply_lora_to_language_model(self,
                     r: int,
                     lora_alpha: int,

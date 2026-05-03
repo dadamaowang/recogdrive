@@ -139,9 +139,15 @@ class NegDriveAgent(AbstractAgent):
 
             for p in self.action_head.parameters():
                 p.requires_grad = False
+
+            diff_dtype = torch.bfloat16   # TODO on H800
+            self.action_head = self.action_head.to(dtype=diff_dtype)
             
         else:
             raise NotImplementedError
+
+        self._verify_model_dtype(self.vlm, "VLM")
+        self._verify_model_dtype(self.action_head, "Diffusion Planner")
 
 
         # -----------------------
@@ -187,6 +193,116 @@ class NegDriveAgent(AbstractAgent):
         #         if k2 in model_dict and v.shape == model_dict[k2].shape:
         #             filtered_ckpt[k2] = v
         #     self.load_state_dict(filtered_ckpt, strict=False)
+
+    def _verify_model_dtype(
+        self,
+        model,
+        model_name,
+        allowed_fp32_keywords=None,
+        verbose=False,
+    ):
+        """
+        Check whether any FLOAT32 parameters are trainable unexpectedly.
+
+        Typical expected fp32 trainable params:
+        - layer norms
+        - biases
+        - positional embeddings
+        - some LoRA params (depending on implementation)
+
+        Args:
+            model: nn.Module
+            allowed_fp32_keywords: list[str]
+                parameter name substrings allowed to stay fp32
+            verbose: bool
+
+        Returns:
+            suspicious_params: list[dict]
+        """
+
+        if allowed_fp32_keywords is None:
+            allowed_fp32_keywords = [
+                # norm
+                "norm",
+                "ln",
+                "layernorm",
+
+                # bias
+                "bias",
+
+                # positional embeddings
+                "position_embedding",
+                "pos_embed",
+                "position_ids",
+
+                # embeddings sometimes intentionally fp32
+                "embedding",
+
+                # LoRA (some implementations keep fp32)
+                "lora_",
+            ]
+
+        suspicious_params = []
+
+        total_params = 0
+        total_trainable = 0
+        total_fp32_trainable = 0
+
+        print("\n" + "=" * 80)
+        print(f"{model_name}-模型精度检查")
+        print("=" * 80)
+
+        for name, param in model.named_parameters():
+
+            total_params += param.numel()
+
+            if param.requires_grad:
+                total_trainable += param.numel()
+
+            # only care about trainable fp32 params
+            if param.requires_grad and param.dtype == torch.float32:
+
+                total_fp32_trainable += param.numel()
+
+                allowed = any(
+                    kw.lower() in name.lower()
+                    for kw in allowed_fp32_keywords
+                )
+
+                info = {
+                    "name": name,
+                    "shape": tuple(param.shape),
+                    "dtype": str(param.dtype),
+                    "allowed": allowed,
+                    "numel": param.numel(),
+                }
+
+                if not allowed:
+                    suspicious_params.append(info)
+
+                if verbose:
+                    status = "OK_ALLOWED" if allowed else "SUSPICIOUS"
+
+                    print(
+                        f"[{status}] "
+                        f"{name:<100} "
+                        f"shape={str(tuple(param.shape)):<25} "
+                        f"dtype={param.dtype}"
+                    )
+
+        print("\n" + "-" * 80)
+        print(f"Total params:                {total_params:,}")
+        print(f"Total trainable params:      {total_trainable:,}")
+        print(f"Trainable fp32 params:       {total_fp32_trainable:,}")
+        print(f"Suspicious fp32 params:      {len(suspicious_params)}")
+        print("-" * 80)
+
+        if len(suspicious_params) == 0:
+            print("✅ No suspicious trainable fp32 params found.")
+        else:
+            print("❌ Found suspicious trainable fp32 params!")
+
+        return suspicious_params
 
 
     def get_sensor_config(self) -> SensorConfig:

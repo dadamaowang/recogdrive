@@ -102,7 +102,7 @@ class NegDriveDiffusionPlannerConfig(PretrainedConfig):
 
     sampling_method: Literal['flow', 'ddpm', 'ddim'] = 'ddim'
     num_inference_steps: int = 5
-    model_dtype: str = "torch.bfloat16"     # TODO on H800; ori "float16"
+    model_dtype: str = "float16"
     grpo: bool = False
     vlm_size: str = 'large'     
     
