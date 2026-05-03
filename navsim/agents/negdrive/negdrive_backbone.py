@@ -106,11 +106,11 @@ class NegDriveBackbone(nn.Module):
 
             self.model = AutoModel.from_pretrained(     
                 checkpoint_path,
-                torch_dtype="auto",     
-                low_cpu_mem_usage=True,     # TODO 
+                dtype=torch.bfloat16,     
+                low_cpu_mem_usage=True,     
                 trust_remote_code=True,
                 use_flash_attn=True,
-                device_map=self.device  
+                device_map=None  
             )
             self.tokenizer = AutoTokenizer.from_pretrained(
                 checkpoint_path,

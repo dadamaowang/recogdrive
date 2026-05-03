@@ -433,7 +433,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         :param agent: agent interface in NAVSIM
         """
         super().__init__()
-        self.save_hyperparameters(cfg)
+        # self.save_hyperparameters(cfg)    # TODO tensorborad 超参这里出问题；后边再解决不是特别重要
 
         self.agent = agent
 
