@@ -473,6 +473,7 @@ class AgentLightningVLMRL(pl.LightningModule):
 
         with torch.no_grad():            
             for g in range(self.G):  
+
                 with torch.autocast("cuda", dtype=torch.bfloat16):
                     # Generate text reasoning
                     gen_output = self.agent.vlm.generate_text_actions(
@@ -499,42 +500,6 @@ class AgentLightningVLMRL(pl.LightningModule):
                     if last_hidden_states.ndim == 2: 
                         last_hidden_states = last_hidden_states.unsqueeze(0)
 
-                    # get actions from planner 
-                    actions = self.agent.action_head.get_action(
-                        last_hidden_states.to(diff_dtype),
-                        diff_input
-                    )   # [B, T, 3]
-                    del last_hidden_states
-
-                    """
-                    BatchFeature(data={"pred_traj": final_actions})
-                    {'pred_traj': tensor([[[ 9.6389e-01,  7.4900e-02,  5.8308e-03],
-                    [ 1.8365e+00,  2.7319e-02,  8.8125e-03],
-                    [ 2.5693e+00,  2.9800e-02,  6.6231e-03],
-                    [ 2.9645e+00,  3.3642e-02,  6.5169e-03],
-                    [ 3.2720e+00, -2.1763e-03,  7.9466e-03],
-                    [ 3.4912e+00,  2.3960e-02,  1.1656e-03],
-                    [ 4.1012e+00, -3.6682e-02,  6.9115e-03],
-                    [ 3.6042e+00, -7.6752e-03,  1.7909e-03]],
-
-                    [[ 1.2922e+00,  1.6138e-01,  5.1677e-02],
-                    [ 2.7716e+00,  1.2371e-01,  8.4622e-02],
-                    [ 2.6529e+00,  1.1328e-01,  1.0839e-01],
-                    [ 2.6180e+00,  1.7940e-01,  1.1723e-01],
-                    [ 2.7896e+00,  1.7507e-01,  1.3273e-01],
-                    [ 3.1623e+00,  1.4215e-01,  1.3982e-01],
-                    [ 3.7028e+00,  2.4421e-01,  1.5477e-01],
-                    [ 3.5862e+00,  2.0090e-01,  1.6826e-01]]], device='cuda:0')}
-                    """
-
-                    # get rewards
-                    reward = self.agent.action_head.get_grpo_reward(
-                        actions,
-                        tokens_list=tokens_list,
-                    )   # [B]
-                    all_rewards.append(reward.cpu())
-                    del actions
-
                     # ── Behavior policy log probs (old policy) ────────────
                     # Computed NOW, inside no_grad, same tokens
                     # This is π_old used in ratio π_θ/π_old
@@ -545,9 +510,44 @@ class AgentLightningVLMRL(pl.LightningModule):
                     )
                     all_logprobs_old_tokens.append(old_token_log_probs.cpu())
 
-                    # After each rollout g:
-                    self._log_vram(f"【显存检查 02- Rollout】after_rollout_g{g}")
+                    
+                # get actions from planner 
+                actions = self.agent.action_head.get_action(
+                    last_hidden_states.to(diff_dtype),
+                    diff_input
+                )   # [B, T, 3]
+                del last_hidden_states
 
+                """
+                BatchFeature(data={"pred_traj": final_actions})
+                {'pred_traj': tensor([[[ 9.6389e-01,  7.4900e-02,  5.8308e-03],
+                [ 1.8365e+00,  2.7319e-02,  8.8125e-03],
+                [ 2.5693e+00,  2.9800e-02,  6.6231e-03],
+                [ 2.9645e+00,  3.3642e-02,  6.5169e-03],
+                [ 3.2720e+00, -2.1763e-03,  7.9466e-03],
+                [ 3.4912e+00,  2.3960e-02,  1.1656e-03],
+                [ 4.1012e+00, -3.6682e-02,  6.9115e-03],
+                [ 3.6042e+00, -7.6752e-03,  1.7909e-03]],
+
+                [[ 1.2922e+00,  1.6138e-01,  5.1677e-02],
+                [ 2.7716e+00,  1.2371e-01,  8.4622e-02],
+                [ 2.6529e+00,  1.1328e-01,  1.0839e-01],
+                [ 2.6180e+00,  1.7940e-01,  1.1723e-01],
+                [ 2.7896e+00,  1.7507e-01,  1.3273e-01],
+                [ 3.1623e+00,  1.4215e-01,  1.3982e-01],
+                [ 3.7028e+00,  2.4421e-01,  1.5477e-01],
+                [ 3.5862e+00,  2.0090e-01,  1.6826e-01]]], device='cuda:0')}
+                """
+
+                # get rewards
+                reward = self.agent.action_head.get_grpo_reward(
+                    actions,
+                    tokens_list=tokens_list,
+                )   # [B]
+                all_rewards.append(reward.cpu())
+                del actions, reward
+            
+                self._log_vram(f"【显存检查 02- Rollout】after_rollout_g{g}")
 
         torch.cuda.empty_cache()
         # After torch.cuda.empty_cache() at end of rollout:

@@ -11,7 +11,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=test_0503_alldtype_06
+EXP_NAME=test_0504_mixeddtype_02
 
 
 export MASTER_PORT=63669
@@ -42,7 +42,7 @@ torchrun \
     seed=89 \
     dataloader.params.batch_size=8 \
     dataloader.params.num_workers=8 \
-    trainer.params.max_epochs=3 \
+    trainer.params.max_epochs=2 \
     trainer.params.devices=${GPUS} \
     trainer.params.strategy="ddp_find_unused_parameters_false" \
     trainer.params.limit_train_batches=0.1 \

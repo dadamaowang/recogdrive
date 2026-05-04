@@ -139,9 +139,6 @@ class NegDriveAgent(AbstractAgent):
 
             for p in self.action_head.parameters():
                 p.requires_grad = False
-
-            diff_dtype = torch.bfloat16   # TODO on H800
-            self.action_head = self.action_head.to(dtype=diff_dtype)
             
         else:
             raise NotImplementedError
