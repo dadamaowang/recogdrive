@@ -12,6 +12,9 @@ vlm_path: ''
 vlm_type: 'internvl'
 vlm_size: 'small'
 vlm_lr: 1e-5
+opt_type: 'AdamW'
+opt_weight_decay: 0.01
+opt_eps: 1e-8
 
 diff_path: ''
 dit_type: 'small'

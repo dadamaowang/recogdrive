@@ -47,12 +47,17 @@ class NegDriveAgent(AbstractAgent):
 
         metric_cache_path: Optional[str] = None,    # for validation 
 
-
         # ========== VLM (POLICY) ==========
         vlm_path: str,
         vlm_type: str = "internvl",
         vlm_size: str = "large",       
-        vlm_lr: float = 1e-5,        
+       
+        # ========== Optimizers and Schedulers ==========
+        vlm_lr: float = 1e-5,
+        opt_type: str = "AdamW",
+        opt_weight_decay: float = 0.01,
+        opt_eps: float = 1e-8,
+
 
         # ========== DIFFUSION (DECODER) ==========
         dit_type: str = "small",
@@ -152,6 +157,9 @@ class NegDriveAgent(AbstractAgent):
         # -----------------------
         self._lr = vlm_lr
         self.per_sample_rollout = per_sample_rollout
+        self.opt_type = opt_type
+        self.opt_weight_decay = opt_weight_decay
+        self.opt_eps = opt_eps
 
 
 
@@ -408,18 +416,19 @@ class NegDriveAgent(AbstractAgent):
 
 
     def get_optimizers(self) -> Union[Optimizer, Dict[str, LRScheduler]]:
-        """for pl
+        """Get Optimizer and Scheduler for Negdrive VLM LoRA Fine-tuneing 
         """
         optimizer_cfg = DictConfig(dict(type="AdamW", 
                                         lr=self._lr, 
-                                        weight_decay=1e-4, 
-                                        betas=(0.9, 0.95))
+                                        weight_decay=self.opt_weight_decay, 
+                                        betas=(0.9, 0.95)),
+                                        eps=self.opt_eps
                                         )
+        trainable_params = [p for p in self.vlm.parameters() if p.requires_grad]
         optimizer = build_from_configs(optim, 
                                        optimizer_cfg, 
-                                       params=self.vlm.parameters())    
-        # TODO this is for full VLM tuning,
-        # for LoRA , adapter ?  
+                                       params=trainable_params)    
+
 
         scheduler = WarmupCosLR(optimizer=optimizer,  
                                     lr=self._lr, 
@@ -444,6 +453,8 @@ class NegDriveAgent(AbstractAgent):
         #     #                         warmup_epochs=3)
             
         return {'optimizer': optimizer, 'lr_scheduler': scheduler}
+
+
 
 
 

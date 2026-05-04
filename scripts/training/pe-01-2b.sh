@@ -11,7 +11,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=test_0504_mixeddtype_02
+EXP_NAME=test_0504_opt_01
 
 
 export MASTER_PORT=63669
@@ -51,7 +51,9 @@ torchrun \
     agent.metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache_train" \
     agent.vlm_path="/UserData/xnq/my_models/Policy/ReCogDrive-VLM-2B" \
     agent.vlm_size="small" \
-    agent.vlm_lr=2e-5 \
     agent.diff_path="/UserData/xnq/my_models/Planner/ReCogDrive-2B-RL/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
-    agent.per_sample_rollout=4
+    agent.per_sample_rollout=4 \
+    agent.vlm_lr=1e-5 \
+    agent.opt_weight_decay=0.01 \
+    agent.opt_eps=1e-8 \
 

@@ -39,12 +39,8 @@ CONFIG_PATH = "config/training"
 CONFIG_NAME = "default_training"   
 
 
-print(f"BF16 supported: {torch.cuda.is_bf16_supported()}")
-# 🔑 启用 TF32 加速 FP32 算子（LayerNorm/Softmax 等）
-torch.set_float32_matmul_precision('high')  # 'high' = TF32, 'medium' = 更快但精度略低
-
-# 🔑 可选：预分配显存防碎片（H800 大显存优势）
-torch.cuda.set_per_process_memory_fraction(0.95, 0)  # 预占 95% 显存
+torch.set_float32_matmul_precision('high')  
+torch.cuda.set_per_process_memory_fraction(0.95, 0) 
 
 
 
@@ -212,11 +208,10 @@ def main(cfg: DictConfig) -> None:
             default_hp_metric=True,      
             ), 
         log_every_n_steps=1, 
-        # callbacks=[pl.callbacks.ModelCheckpoint
+        # callbacks=[pl.callbacks.ModelCheckpoint   # TODO callbacks
         #            (monitor="val/loss_epoch",mode='min', save_top_k=5,every_n_epochs=1)]
         )
         # callbacks: Train normally, but also run this checkpoint-saving logic during training.
-
 
 
     logger.info("Starting Training")

@@ -425,7 +425,7 @@ def compute_negdrive_advantages(
 
 
 class AgentLightningVLMRL(pl.LightningModule):
-    """Pytorch lightning wrapper for learnable vlm recogdrive agent."""
+    """Pytorch lightning wrapper for negdrive agent."""
 
     def __init__(self, agent: AbstractAgent, cfg: DictConfig = None):
         """
@@ -433,13 +433,42 @@ class AgentLightningVLMRL(pl.LightningModule):
         :param agent: agent interface in NAVSIM
         """
         super().__init__()
+
         # self.save_hyperparameters(cfg)    # TODO tensorborad 超参这里出问题；后边再解决不是特别重要
 
         self.agent = agent
-
         self.G = agent.per_sample_rollout
 
-        self.automatic_optimization = False
+        self.automatic_optimization = False  # NOTE negdrive 算法的负样本动态优化和不等长梯度特性，要求必须手动优化
+
+
+    def training_step(self, 
+                      batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], 
+                      batch_idx: int) -> Tensor:
+        """
+        Step called on training samples
+
+        :param batch: tuple of dictionaries for feature and target tensors (batched)
+        :param batch_idx: index of batch (ignored)
+        :return: scalar loss
+        """
+        if self.automatic_optimization:
+            return self._step(batch, "train")
+
+        else:
+            opt = self.optimizers()
+            sch = self.lr_schedulers()
+
+            opt.zero_grad()
+            skipped = self._step(batch, "train")
+            if skipped:
+                return 
+            
+            # torch.nn.utils.clip_grad_norm_(self.agent.vlm.parameters(), max_norm=1.0)    TODO 这个好像没办法 
+
+            opt.step()
+            sch.step()
+
 
 
     def _step(self, 
@@ -805,7 +834,6 @@ class AgentLightningVLMRL(pl.LightningModule):
         return diff_dtype, diff_input
             
 
-
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         """
         每次保存 checkpoint 时，只保留 state_dict 中不以 'agent.model' 开头的条目。
@@ -816,36 +844,6 @@ class AgentLightningVLMRL(pl.LightningModule):
             if not k.startswith('agent.model')
         }
         checkpoint['state_dict'] = filtered_sd
-
-
-    def training_step(self, 
-                      batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], 
-                      batch_idx: int) -> Tensor:
-        """
-        Step called on training samples
-
-
-        :param batch: tuple of dictionaries for feature and target tensors (batched)
-        :param batch_idx: index of batch (ignored)
-        :return: scalar loss
-        """
-        if self.automatic_optimization:
-            return self._step(batch, "train")
-
-        else:
-            opt = self.optimizers()
-            sch = self.lr_schedulers()
-
-            opt.zero_grad()
-            skipped = self._step(batch, "train")
-            if skipped:
-                return 
-            
-            # torch.nn.utils.clip_grad_norm_(self.agent.vlm.parameters(), max_norm=1.0)    TODO 这个好像没办法 
-
-            opt.step()
-            sch.step()
-
 
 
     def _zero_loss(self) -> torch.Tensor:
