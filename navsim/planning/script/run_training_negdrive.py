@@ -23,14 +23,14 @@ from torch.utils.data import DataLoader
 import torch.distributed as dist
 
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from navsim.agents.abstract_agent import AbstractAgent
 from navsim.common.dataclasses import SceneFilter
 from navsim.common.dataloader import SceneLoader
 from navsim.planning.training.dataset import Dataset
-from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL, VRAMMonitor
+from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL, VRAMMonitor, OptimizerHealthMonitor
 
 
 logger = logging.getLogger(__name__)
@@ -208,11 +208,16 @@ def main(cfg: DictConfig) -> None:
             default_hp_metric=True,      
             ), 
         log_every_n_steps=1, 
+        callbacks=[
+            VRAMMonitor(), 
+            LearningRateMonitor(logging_interval="step"),
+            OptimizerHealthMonitor(),
+        ]
         # callbacks=[pl.callbacks.ModelCheckpoint   # TODO callbacks
         #            (monitor="val/loss_epoch",mode='min', save_top_k=5,every_n_epochs=1)]
         )
         # callbacks: Train normally, but also run this checkpoint-saving logic during training.
-
+    agent.set_total_training_steps(trainer.estimated_stepping_batches * trainer.max_epochs)
 
     logger.info("Starting Training")
     trainer.fit(

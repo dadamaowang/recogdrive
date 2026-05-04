@@ -153,13 +153,15 @@ class NegDriveAgent(AbstractAgent):
 
 
         # -----------------------
-        # GRPO / RL parameters
+        # training parameters 
         # -----------------------
         self._lr = vlm_lr
         self.per_sample_rollout = per_sample_rollout
         self.opt_type = opt_type
         self.opt_weight_decay = opt_weight_decay
         self.opt_eps = opt_eps
+
+        self.total_training_steps = None   # to be set by lightning module at runtime
 
 
 
@@ -177,6 +179,10 @@ class NegDriveAgent(AbstractAgent):
 
     def name(self) -> str:
         return self.__class__.__name__
+
+    def set_total_training_steps(self, total_steps: int):
+        self.total_training_steps = total_steps
+        print(f"Total training steps {total_steps}")
 
 
     def initialize(self) -> None:   # TODO 
@@ -418,40 +424,46 @@ class NegDriveAgent(AbstractAgent):
     def get_optimizers(self) -> Union[Optimizer, Dict[str, LRScheduler]]:
         """Get Optimizer and Scheduler for Negdrive VLM LoRA Fine-tuneing 
         """
-        optimizer_cfg = DictConfig(dict(type="AdamW", 
-                                        lr=self._lr, 
-                                        weight_decay=self.opt_weight_decay, 
-                                        betas=(0.9, 0.95)),
-                                        eps=self.opt_eps
-                                        )
+
         trainable_params = [p for p in self.vlm.parameters() if p.requires_grad]
-        optimizer = build_from_configs(optim, 
-                                       optimizer_cfg, 
-                                       params=trainable_params)    
+        optimizer = torch.optim.AdamW(
+            trainable_params,
+            lr=self._lr,
+            betas=(0.9, 0.95),
+            weight_decay=self.opt_weight_decay,
+            eps=self.opt_eps,
+            fused=True  # for H800
+        )
 
-
-        scheduler = WarmupCosLR(optimizer=optimizer,  
-                                    lr=self._lr, 
-                                    min_lr=0.0, 
-                                    epochs=10, 
-                                    warmup_epochs=0
-                                    )       
+        # optimizer_cfg = DictConfig(dict(type="AdamW", 
+        #                                 lr=self._lr, 
+        #                                 weight_decay=self.opt_weight_decay, 
+        #                                 betas=(0.9, 0.95))
+        #                                 )
         
-        # if self.grpo:
-        #     scheduler = WarmupCosLR(optimizer=optimizer,    # TODO 这个是啥东西
+        # optimizer = build_from_configs(optim, 
+        #                                optimizer_cfg, 
+        #                                params=trainable_params)    
+
+        total_steps = self.total_training_steps
+        warmup_steps = int(total_steps * 0.05)
+        print(f"Total training steps: {total_steps}, Warmup steps: {warmup_steps}")
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[
+                torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=warmup_steps),
+                torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps - warmup_steps, eta_min=2e-6)
+            ],
+            milestones=[warmup_steps]
+        )
+
+        # scheduler = WarmupCosLR(optimizer=optimizer,  
         #                             lr=self._lr, 
         #                             min_lr=0.0, 
         #                             epochs=10, 
         #                             warmup_epochs=0
-        #                             )
-        # else:
-        #     raise NotImplementedError
-        #     # scheduler = WarmupCosLR(optimizer=optimizer,    # TODO 另外的
-        #     #                         lr=self._lr, 
-        #     #                         min_lr=1e-6, 
-        #     #                         epochs=200, 
-        #     #                         warmup_epochs=3)
-            
+        #                             )       
+                    
         return {'optimizer': optimizer, 'lr_scheduler': scheduler}
 
 

@@ -442,6 +442,12 @@ class AgentLightningVLMRL(pl.LightningModule):
         self.automatic_optimization = False  # NOTE negdrive 算法的负样本动态优化和不等长梯度特性，要求必须手动优化
 
 
+    def configure_optimizers(self):
+        print('Configure Optimizers ...')
+        return self.agent.get_optimizers()
+
+
+
     def training_step(self, 
                       batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], 
                       batch_idx: int) -> Tensor:
@@ -452,23 +458,22 @@ class AgentLightningVLMRL(pl.LightningModule):
         :param batch_idx: index of batch (ignored)
         :return: scalar loss
         """
-        if self.automatic_optimization:
-            return self._step(batch, "train")
 
-        else:
-            opt = self.optimizers()
-            sch = self.lr_schedulers()
+        opt = self.optimizers()
+        sch = self.lr_schedulers()
 
-            opt.zero_grad()
-            skipped = self._step(batch, "train")
-            if skipped:
-                return 
-            
-            # torch.nn.utils.clip_grad_norm_(self.agent.vlm.parameters(), max_norm=1.0)    TODO 这个好像没办法 
+        opt.zero_grad()
+        skipped = self._step(batch, "train")
+        if skipped:
+            return
+        
+        torch.nn.utils.clip_grad_norm_(
+            [p for p in self.agent.vlm.parameters() if p.requires_grad],
+            max_norm=1.0,
+            )    # TODO 
 
-            opt.step()
-            sch.step()
-
+        opt.step()
+        sch.step()
 
 
     def _step(self, 
@@ -887,11 +892,6 @@ class AgentLightningVLMRL(pl.LightningModule):
         # return self._step(batch, "val")
 
 
-    def configure_optimizers(self):
-        print('Configure Optimizers ...')
-        return self.agent.get_optimizers()
-
-
     def _log_vram(self, tag: str):
         """Print VRAM usage at a specific point. Remove after debugging."""
         allocated = torch.cuda.memory_allocated() / 1e9
@@ -954,3 +954,30 @@ class VRAMMonitor(Callback):
         pl_module.log("vram/used_pct", status["used_pct"], prog_bar=True, sync_dist=True)
 
 
+
+class OptimizerHealthMonitor(Callback):
+    """
+
+    """
+    def __init__(self, log_every_n_steps: int = 50):
+        self.log_every = log_every_n_steps
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        # 频率控制 & DDP 去重
+        if trainer.global_step % self.log_every != 0 or trainer.global_rank != 0:
+            return
+
+        # 1. 当前学习率
+        lr = trainer.optimizers[0].param_groups[0]["lr"]
+
+        # 2. 全局梯度范数 (只读计算，不修改梯度)
+        grads = [p.grad.detach() for p in pl_module.parameters() if p.grad is not None]
+        grad_norm = torch.stack(grads).norm().item() if grads else 0.0
+
+        # 3. 是否触发梯度裁剪 (假设 Trainer 设了 gradient_clip_val=1.0)
+        clip_triggered = grad_norm > 1.0
+
+        # 4. 同步到 TensorBoard / W&B
+        pl_module.log("optimizer/lr", lr, on_step=True, sync_dist=False)
+        pl_module.log("optimizer/grad_norm", grad_norm, on_step=True, sync_dist=False)
+        pl_module.log("optimizer/clip_triggered", float(clip_triggered), on_step=True, sync_dist=False)
