@@ -53,6 +53,8 @@ torchrun \
     agent.vlm_size="small" \
     agent.diff_path="/UserData/xnq/my_models/Planner/ReCogDrive-2B-RL/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
     agent.per_sample_rollout=4 \
+    agent.bag_g=4 \
+    agent.max_text_tokens=128 \
     agent.vlm_lr=1e-5 \
     agent.opt_weight_decay=0.01 \
     agent.opt_eps=1e-8 \

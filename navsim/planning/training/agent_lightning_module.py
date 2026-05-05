@@ -437,7 +437,11 @@ class AgentLightningVLMRL(pl.LightningModule):
         # self.save_hyperparameters(cfg)    # TODO tensorborad 超参这里出问题；后边再解决不是特别重要
 
         self.agent = agent
+        self.max_gen_text_tokens = agent.max_text_tokens
         self.G = agent.per_sample_rollout
+        self.bag_g = agent.bag_g
+
+        
 
         self.automatic_optimization = False  # NOTE negdrive 算法的负样本动态优化和不等长梯度特性，要求必须手动优化
 
@@ -450,7 +454,6 @@ class AgentLightningVLMRL(pl.LightningModule):
         self.agent.set_total_training_steps(total_steps)
 
         return self.agent.get_optimizers()
-
 
 
     def training_step(self, 
@@ -483,6 +486,66 @@ class AgentLightningVLMRL(pl.LightningModule):
 
         opt.step()
         sch.step()
+
+
+    def validation_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int):
+
+        features, targets, tokens_list = batch
+        pixel_values_cat, questions, num_patches_list, history_trajectory = self.unpack_features(features)
+        diff_dtype, diff_input = self.get_diff_input(features, history_trajectory)
+
+        all_rewards = []
+        with torch.no_grad():
+            for g in range(self.bag_g):
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    gen_output = self.agent.vlm.generate_text_actions(
+                        pixel_values_cat, 
+                        questions, 
+                        num_patches_list=num_patches_list,
+                        max_new_tokens=self.max_gen_text_tokens,  
+                    )
+
+                    fwd_output = self.agent.vlm.forward_with_ids(
+                        pixel_values_cat,
+                        gen_output.full_ids,
+                        gen_output.attention_mask
+                    )
+
+                    last_hidden_states = fwd_output.hidden_states[-1].clone()
+                    del fwd_output
+                    if last_hidden_states.ndim == 2: 
+                        last_hidden_states = last_hidden_states.unsqueeze(0)
+
+                actions = self.agent.action_head.get_action(
+                    last_hidden_states.to(diff_dtype),
+                    diff_input
+                )   # [B, T, 3]
+
+                reward = self.agent.action_head.get_grpo_reward(
+                    actions,
+                    tokens_list=tokens_list,
+                )   # [B]
+                all_rewards.append(reward.cpu())
+                del actions, reward, gen_output
+        
+        # Compute Metrics
+        rewards_tensor = torch.stack(
+            [r.to(self.device) for r in all_rewards], dim=1
+        ).float()   # [B, bag_g]
+        del all_rewards
+
+        # Best-of-G reward: if ANY rollout succeeds, count as success
+        # This measures the model's exploration ability
+        # TODO val 的 reward 选择
+        best_of_g_reward  = rewards_tensor.max(dim=1).values   # [B]
+        mean_reward = rewards_tensor.mean(dim=1)    # [B]
+
+        self.log("val/best_of_g_reward", best_of_g_reward.mean(), on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log("val/mean_reward", mean_reward.mean(), on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
+
+        del rewards_tensor
+        torch.cuda_empty_cache()
+
 
 
     def _step(self, 
@@ -523,12 +586,8 @@ class AgentLightningVLMRL(pl.LightningModule):
                         pixel_values_cat, 
                         questions, 
                         num_patches_list=num_patches_list,
-                        max_new_tokens=128,    # TODO reasoning
+                        max_new_tokens=self.max_gen_text_tokens,  
                     )
-                    """【EXPTODO】
-                    max_new_tokns 的数目，如果要 reasoning 的话，设置多大合适？（也不能爆显存）
-                    
-                    """
                     all_gen_output.append(gen_output)
 
                     # Forward pass with full_ids, get last hidden states
@@ -756,12 +815,8 @@ class AgentLightningVLMRL(pl.LightningModule):
         self.log(f"{logging_prefix}/pg_loss", total_pg_loss,
                 on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
         
-        if self.automatic_optimization:
-            self.log(f"{logging_prefix}/total_loss", total_loss.item(),
-                on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
-            return total_loss
-        else:
-            return False 
+
+        return False 
 
 
     def unpack_features(self, features: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, List[str], List[int]]:
@@ -850,14 +905,42 @@ class AgentLightningVLMRL(pl.LightningModule):
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         """
-        每次保存 checkpoint 时，只保留 state_dict 中不以 'agent.model' 开头的条目。
+        Save only LoRA adapter weights -- skip everything else.
         """
-        filtered_sd = {
+        lora_state_dict = {
             k: v
             for k, v in checkpoint['state_dict'].items()
-            if not k.startswith('agent.model')
+            if 'lora_' in k   # only LoRA adapter weights
         }
-        checkpoint['state_dict'] = filtered_sd
+
+        checkpoint['state_dict'] = lora_state_dict
+
+        print(f"Checkpoint saved: {len(lora_state_dict)} LoRA tensors "
+            f"({sum(v.numel() for v in lora_state_dict.values()):,} parameters)")
+
+
+
+    # def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+    #     """
+    #     Load LoRA weights back into the VLM.
+    #     Called automatically by Lightning when resuming from checkpoint.
+    #     """
+    #     lora_state_dict = checkpoint['state_dict']
+
+    #     # Load with strict=False — checkpoint only has LoRA keys,
+    #     # not the full model state dict
+    #     missing, unexpected = self.agent.vlm.load_state_dict(
+    #         lora_state_dict, strict=False
+    #     )
+
+    #     # Only real problem is if LoRA keys themselves are missing
+    #     lora_missing = [k for k in missing if 'lora_' in k]
+    #     if lora_missing:
+    #         print(f"WARNING: Missing LoRA keys: {lora_missing}")
+    #     else:
+    #         print(f"LoRA weights loaded successfully "
+    #             f"({len(lora_state_dict)} tensors).")
+
 
 
     def _zero_loss(self) -> torch.Tensor:
@@ -885,20 +968,6 @@ class AgentLightningVLMRL(pl.LightningModule):
 
         # Should never reach here
         return torch.tensor(0.0, device=self.device, requires_grad=True)
-
-
-    def validation_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int):
-        # """
-        # Step called on validation samples
-        # :param batch: tuple of dictionaries for feature and target tensors (batched)
-        # :param batch_idx: index of batch (ignored)
-        # :return: scalar loss
-        # """
-
-        loss = torch.tensor(0.0, device=self.device)
-        
-        self.log("val/loss", loss)
-        # return self._step(batch, "val")
 
 
     def _log_vram(self, tag: str):

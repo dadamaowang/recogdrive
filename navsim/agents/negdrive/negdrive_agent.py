@@ -67,6 +67,8 @@ class NegDriveAgent(AbstractAgent):
 
         # ========== RL / GRPO ==========
         per_sample_rollout: int = 4,
+        bag_g: int = 4,   # Best-of-G reward
+        max_text_tokens: int = 128,   # max generated text tokens 
         reward_scale: float = 1.0,
         entropy_coef: float = 0.01,
         kl_coef: float = 0.0,
