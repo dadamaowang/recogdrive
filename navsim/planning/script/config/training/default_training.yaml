@@ -48,9 +48,11 @@ trainer:
     fast_dev_run: false  # runs 1 batch of train/val/test for sanity
 
     accumulate_grad_batches: 1  # accumulates gradients every n batches
-    track_grad_norm: -1  # logs the p-norm for inspection
 
-    gradient_clip_val: 1.0  # value to clip gradients 
-    gradient_clip_algorithm: norm  # [value, norm] method to clip gradients
+    # track_grad_norm: -1  # logs the p-norm for inspection TODO ？
+
+    # 手动
+    # gradient_clip_val: 1.0  # value to clip gradients 
+    # gradient_clip_algorithm: norm  # [value, norm] method to clip gradients
 
     default_root_dir: ${output_dir}

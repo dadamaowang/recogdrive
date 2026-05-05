@@ -217,7 +217,6 @@ def main(cfg: DictConfig) -> None:
         #            (monitor="val/loss_epoch",mode='min', save_top_k=5,every_n_epochs=1)]
         )
         # callbacks: Train normally, but also run this checkpoint-saving logic during training.
-    agent.set_total_training_steps(trainer.estimated_stepping_batches * trainer.max_epochs)
 
     logger.info("Starting Training")
     trainer.fit(

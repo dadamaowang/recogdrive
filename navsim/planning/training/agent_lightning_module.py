@@ -444,6 +444,11 @@ class AgentLightningVLMRL(pl.LightningModule):
 
     def configure_optimizers(self):
         print('Configure Optimizers ...')
+
+        total_steps = self.trainer.estimated_stepping_batches
+        print(f"total training steps : {total_steps}")
+        self.agent.set_total_training_steps(total_steps)
+
         return self.agent.get_optimizers()
 
 
@@ -467,10 +472,14 @@ class AgentLightningVLMRL(pl.LightningModule):
         if skipped:
             return
         
-        torch.nn.utils.clip_grad_norm_(
+        grad_norm = torch.nn.utils.clip_grad_norm_(
             [p for p in self.agent.vlm.parameters() if p.requires_grad],
             max_norm=1.0,
             )    # TODO 
+        # clip_grad_norm_ returns the total norm BEFORE clipping
+        self.log("train/grad_norm", grad_norm,
+                on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+
 
         opt.step()
         sch.step()
@@ -970,14 +979,14 @@ class OptimizerHealthMonitor(Callback):
         # 1. 当前学习率
         lr = trainer.optimizers[0].param_groups[0]["lr"]
 
-        # 2. 全局梯度范数 (只读计算，不修改梯度)
-        grads = [p.grad.detach() for p in pl_module.parameters() if p.grad is not None]
-        grad_norm = torch.stack(grads).norm().item() if grads else 0.0
+        # # 2. 全局梯度范数 (只读计算，不修改梯度)
+        # grads = [p.grad.detach() for p in pl_module.parameters() if p.grad is not None]
+        # grad_norm = torch.stack(grads).norm().item() if grads else 0.0
 
-        # 3. 是否触发梯度裁剪 (假设 Trainer 设了 gradient_clip_val=1.0)
-        clip_triggered = grad_norm > 1.0
+        # # 3. 是否触发梯度裁剪 (假设 Trainer 设了 gradient_clip_val=1.0)
+        # clip_triggered = grad_norm > 1.0
 
         # 4. 同步到 TensorBoard / W&B
         pl_module.log("optimizer/lr", lr, on_step=True, sync_dist=False)
-        pl_module.log("optimizer/grad_norm", grad_norm, on_step=True, sync_dist=False)
-        pl_module.log("optimizer/clip_triggered", float(clip_triggered), on_step=True, sync_dist=False)
+        # pl_module.log("optimizer/grad_norm", grad_norm, on_step=True, sync_dist=False)
+        # pl_module.log("optimizer/clip_triggered", float(clip_triggered), on_step=True, sync_dist=False)

@@ -11,7 +11,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=test_0504_cilpg_01
+EXP_NAME=test_0505_val_01
 
 
 export MASTER_PORT=63669
