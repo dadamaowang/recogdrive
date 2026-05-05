@@ -158,7 +158,12 @@ class NegDriveAgent(AbstractAgent):
         # training parameters 
         # -----------------------
         self._lr = vlm_lr
+
         self.per_sample_rollout = per_sample_rollout
+        self.bag_g = bag_g
+        self.max_text_tokens = max_text_tokens
+
+
         self.opt_type = opt_type
         self.opt_weight_decay = opt_weight_decay
         self.opt_eps = opt_eps
