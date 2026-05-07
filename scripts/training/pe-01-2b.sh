@@ -11,12 +11,12 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=debug_0507_01
-FAST_DEV_RUN=true
+EXP_NAME=pre_exp_0507_2b_01
+FAST_DEV_RUN=false
 
 export MASTER_PORT=63669
 export PORT=63665
-export GPUS=2
+export GPUS=4
 export GPUS_PER_NODE=$GPUS
 
 MASTER_PORT=${MASTER_PORT:-63669}
