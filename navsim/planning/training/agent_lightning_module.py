@@ -544,7 +544,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         self.log("val/mean_reward", mean_reward.mean(), on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
 
         del rewards_tensor
-        torch.cuda_empty_cache()
+        torch.cuda.empty_cache()
 
 
 
