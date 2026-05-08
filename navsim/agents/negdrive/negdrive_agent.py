@@ -154,6 +154,18 @@ class NegDriveAgent(AbstractAgent):
         self._verify_model_dtype(self.action_head, "Diffusion Planner")
 
 
+    # 🔑 追加以下自检逻辑（打印各子模块加载状态）
+        print(f"✅ Diffusion planner loaded: {len(cleaned_state_dict) - len(real_unexpected)} keys matched")
+        print(f"🔍 核心子模块加载验证:")
+        for name, module in self.action_head.named_children():
+            # 统计该模块在 checkpoint 中命中的参数数量
+            matched_keys = sum(1 for k in cleaned_state_dict if k.startswith(f"{name}."))
+            total_params = sum(1 for _ in module.named_parameters())
+            status = "✅ 已加载" if matched_keys == total_params else "⚠️ 部分/未加载"
+            print(f"   {name}: {status} ({matched_keys}/{total_params} keys)")
+
+
+
         # -----------------------
         # training parameters 
         # -----------------------
