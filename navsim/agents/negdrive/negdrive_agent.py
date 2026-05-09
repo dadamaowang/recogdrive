@@ -68,7 +68,8 @@ class NegDriveAgent(AbstractAgent):
         # ========== RL / GRPO ==========
         per_sample_rollout: int = 4,
         bag_g: int = 4,   # Best-of-G reward
-        max_text_tokens: int = 128,   # max generated text tokens 
+        max_text_tokens: int = 128,   # max generated text tokens
+        max_padding_len: int = 2800,   # max token length after padding (for diffusion input) 
         reward_scale: float = 1.0,
         entropy_coef: float = 0.01,
         kl_coef: float = 0.0,
@@ -94,10 +95,13 @@ class NegDriveAgent(AbstractAgent):
         self.vlm_type = vlm_type   
         self.vlm_size = vlm_size    
 
+        self.max_padding_len = max_padding_len
+
         self.vlm = NegDriveBackbone(     # TODO ori: ReCogDriveBackbone
             model_type=self.vlm_type,
             checkpoint_path=self.vlm_path,
             device=self.device,
+            max_padding_len=self.max_padding_len,
         )
 
         

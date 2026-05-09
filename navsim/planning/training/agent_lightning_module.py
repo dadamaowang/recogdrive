@@ -612,7 +612,7 @@ class AgentLightningVLMRL(pl.LightningModule):
                     )
                     all_logprobs_old_tokens.append(old_token_log_probs.cpu())
 
-                    
+                
                 # get actions from planner 
                 actions = self.agent.action_head.get_action(
                     last_hidden_states.to(diff_dtype),

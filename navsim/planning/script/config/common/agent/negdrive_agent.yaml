@@ -25,3 +25,4 @@ metric_cache_path: ''
 per_sample_rollout: 4
 bag_g: 4
 max_text_tokens: 128
+max_padding_len: 2800

@@ -11,7 +11,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=debug
+EXP_NAME=check_0509
 FAST_DEV_RUN=true
 
 export MASTER_PORT=63669
@@ -56,6 +56,7 @@ torchrun \
     agent.per_sample_rollout=3 \
     agent.bag_g=2 \
     agent.max_text_tokens=128 \
+    agent.max_padding_len=2800 \
     agent.vlm_lr=1e-5 \
     agent.opt_weight_decay=0.01 \
     agent.opt_eps=1e-8 \

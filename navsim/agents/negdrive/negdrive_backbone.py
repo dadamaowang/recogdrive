@@ -6,8 +6,8 @@
 @Version :   0.0.1
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   正在改成生成 text tokens, 还是用 diffusion planner 优化
-@Desc    :   重要
+@Status  :   
+@Desc    :  
 '''
 
 
@@ -81,6 +81,7 @@ class NegDriveBackbone(nn.Module):
                  model_type: str,
                  checkpoint_path: str,
                  device: str = "cuda",
+                 max_padding_len: int = 2800,
                  # TODO 添加 lora config 
                  ):
         """
@@ -97,6 +98,8 @@ class NegDriveBackbone(nn.Module):
         self.tokenizer = None  
         self.model_type = model_type.lower()
         self.device = device
+        
+        self.max_padding_len = max_padding_len
 
         print(f"Initializing backbone of type: '{self.model_type}' from path: '{checkpoint_path}'")
 
@@ -349,7 +352,7 @@ class NegDriveBackbone(nn.Module):
             return_tensors='pt',
             padding=True,
             truncation=True,
-            max_length=2800,
+            max_length=self.max_padding_len,
         )
         device = torch.device("cuda")
 
@@ -360,6 +363,8 @@ class NegDriveBackbone(nn.Module):
             input_ids = input_ids.unsqueeze(0)  # [1, SeqLen]
         if attention_mask.ndim == 1:
             attention_mask = attention_mask.unsqueeze(0)    # [1, SeqLen]
+
+        self._check_mask_ratio(attention_mask)
 
         prompt_len = input_ids.shape[1]
 
@@ -502,132 +507,28 @@ class NegDriveBackbone(nn.Module):
         return queries
     
 
-    def compute_gaussian_logprob(
-            self,
-            policy_output, # NegDriveBackboneOutput,
-            ref_output = None, # NegDriveBackboneOutupt
-            log_std: float = 0.0,
-            pool_strategy: str = "last_non_pad"
-        ) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        For GRPO reward computation when VLM act as cognitive backbone
-
-        """
-
-        policy_h = self.pool_hidden_state(
-            hidden_states = policy_output.hidden_states,
-            atten_masks = policy_output.attention_mask
-        )
-
-        # TODO 处理 ref_h 
-        # # Pool both hidden states → [B, HiddenDim]
-        # policy_h = pool_hidden_state(policy_output.hidden_states, policy_output.attention_mask, pool)
-        # ref_h    = pool_hidden_state(ref_output.hidden_states,    ref_output.attention_mask,    pool)
-
-        # # ref_h must NOT contribute gradients — it's the fixed Gaussian mean
-        # ref_h = ref_h.detach()        
-
-        # scalar: σ²
-        sigma_sq = torch.exp(
-            2 * torch.tensor(log_std, dtype=policy_h.dtype, device=policy_h.device)
-        )   # TODO
-        """
-        Concrete Numbers
-
-        log_std = 0.0   →  σ=1.0,  σ²=1.0   (default, balanced)
-        log_std = 1.0   →  σ=2.72, σ²=7.39  (wide, tolerant of drift)
-        log_std = -1.0  →  σ=0.37, σ²=0.14  (tight, penalizes drift heavily)
+    def _check_mask_ratio(self, attention_mask: torch.Tensor):
+        """check if input+image have padding"""
         
+        mask_ratio = attention_mask.float().mean().item()
+        print(f"Attention mask ratio (non-padding tokens): {mask_ratio:.4f} (100%=no padding, 0%=all padding)")
+
+        seq_lengths = attention_mask.sum(dim=1).tolist()
+        print(f"Sequence lengths (non-padding tokens) per batch item: {seq_lengths}")
+
+    
+    def _masked_mean_pool(hidden_states, attention_mask):
         """
-        log_probs = -0.5 * (policy_h.pow(2) / sigma_sq).sum(dim=-1)    # TODO
+        TODO 在 vl_embed mean 之前选择性加入，确保计算时只考虑非 padding tokens 的 hidden states
 
-        # TODO ref_h 的
-        # diff         = policy_h - ref_h                     # [B, HiddenDim]
-        # log_probs    = -0.5 * (diff.pow(2) / sigma_sq).sum(dim=-1)  # [B]
-
-        return log_probs, policy_h  # both returned — policy_h reused by diffusion planner
-
-
-    def pool_hidden_state(self,
-                          hidden_states: torch.Tensor,
-                          atten_masks: torch.Tensor,    # [B, S], 1=real token, 0=padding.
-                          pool_strategy: Literal["last_non_pad", "mean"] = "last_non_pad", 
-                          ) -> torch.Tensor:
-        """
-        NOTE 
-        for GRPO, we need **one vector per batch item** to compute reward.
-        In this case, we got outputs.hidden_state [B, SeqLen, HiddenDim], 
-        which has SeqLen vectors and we only need one (or, dim is one)
-        e.g., we can pick the last one, or we compute mean, etc.
-
-        TODO: 选择的策略？可调研
-
-        pool_strategy:
-            - last_non_pad : 
-            - mean: 
-
-        Args:
-            pool_strategy:
-                last_non_pad: last real token (best for causal LM) TODO
-                mean: mean over all real tokens
-                ...
         
-        Returns:
-            h: [B, HiddenDim]
-            
+        hidden_states: [B, Seq, H]
+        attention_mask: [B, Seq]
         """
-        last_layer = hidden_states[-1]
-        B, S, D = last_layer.shape
+        mask = attention_mask.unsqueeze(-1).to(hidden_states.dtype)
 
-        if pool_strategy == "last_non_pad":
-            """
-            NOTE 
-            attention_mask tells you which tokens are real (1) vs padding (0)
-            [1, 1, 1, 1, 1, 1, 0, 0, 0]
-            ↑ real tokens ↑  ↑ padding ↑
+        summed = (hidden_states * mask).sum(dim=1)
 
-            sum can tell the last real token's idx
+        counts = mask.sum(dim=1).clamp(min=1e-6)
 
-            standard causal LMs's last token has attented to all previous tokens, thus it is the most info-rich position
-            """
-            last_idx = atten_masks.sum(dim=-1) - 1      # TODO 这个为什么每次不一样
-            last_idx = last_idx.clamp(min=0).long()    
-            # (1) safety guard (could produce -1)
-            # (2) Tensor indexing in PyTorch requires integer (Long) dtype.
-
-            h = last_layer[
-                torch.arange(B, device=last_layer.device),
-                last_idx,
-            ]   # torch.Size([1, 1536]) [B, HiddenDim]
-
-        elif pool_strategy == "mean":
-            raise NotImplementedError
-
-    #     elif pool == "mean":
-    #         mask = attention_mask.unsqueeze(-1).float()     # [B, S, 1]
-    #         h = (last_layer * mask).sum(dim=1)              # [B, HiddenDim]
-    #         h = h / mask.sum(dim=1).clamp(min=1)            # [B, HiddenDim]
-
-    #     else:
-    #         raise ValueError(f"Unknown pool strategy: '{pool}'")
-        return h
-
-
-
-    # def extract_logprobs_from_outputs(
-    #         self,
-    #         outputs: NegDriveBackboneOutput,
-    #         resp_start_idx: Optional[int] = None,
-    #     ) -> torch.Tensor:
-    #     """
-    #     Extract per-token log prob of generated tokens. (to compute loss for RL training)
-
-    #     TODO
-    #     当使用的 VLM 添加了 head, 使用这种方式
-
-    #     """
-        
-    #     logits = outputs.logits     # torch.Size([B, 2800(seq_len), 151682])
-
-    #     return outputs
-
+        return summed / counts

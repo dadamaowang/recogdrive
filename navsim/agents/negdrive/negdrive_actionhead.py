@@ -608,36 +608,6 @@ class NegDriveDiffusionPlanner(nn.Module):
         return BatchFeature(data={"pred_traj": final_actions})
     
 
-    def get_grpo_reward(self,
-                        actions,        # BatchFeature(data={"pred_traj"})
-                        tokens_list,
-                        ):
-        """
-        Docstring for get_grpo_reward
-        
-        
-        """
-        final_actions = actions["pred_traj"]
-        # final_actions.detach()
-
-        unique_tokens = set(tokens_list)
-        metric_cache = {}
-        for token in unique_tokens:
-            path = self.metric_cache_loader.metric_cache_paths[token]
-            
-            path = '/UserData' + path # TODO 
-
-            with lzma.open(path, 'rb') as f:
-                metric_cache[token] = pickle.load(f)
-
-
-        rewards = self.reward_pdm(pred_traj=final_actions,
-                                 tokens_list=unique_tokens,
-                                 cache_dict=metric_cache)
-
-        return rewards
-
-
     def reward_pdm(
         self,
         pred_traj: torch.Tensor,
