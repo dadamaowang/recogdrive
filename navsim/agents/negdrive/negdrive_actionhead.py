@@ -344,7 +344,8 @@ class NegDriveDiffusionPlanner(nn.Module):
         vl_features: torch.Tensor,
         his_traj_features: torch.Tensor,
         ego_status_features: torch.Tensor,
-        deterministic: bool = True
+        deterministic: bool = True,
+        attention_mask: torch.Tensor = None
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Calculates the mean and log variance of the reverse process p(x_{t-1} | x_t).
@@ -357,7 +358,16 @@ class NegDriveDiffusionPlanner(nn.Module):
             pos_ids = torch.arange(action_features.shape[1], device=x.device)
             action_features = action_features + self.position_embedding(pos_ids)
 
-        vl_features_mean = vl_features.mean(1).unsqueeze(1).repeat(1, self.config.action_horizon, 1)
+
+        summed_embeds = self._masked_mean_pool(vl_features, attention_mask=attention_mask)
+        vl_features_mean = summed_embeds.unsqueeze(1).repeat(1, self.config.action_horizon, 1)
+
+        if attention_mask is not None:
+            summed_embeds = self._masked_mean_pool(vl_features, attention_mask=attention_mask)
+            vl_features_mean = summed_embeds.unsqueeze(1).repeat(1, self.config.action_horizon, 1)
+        else:
+            vl_features_mean = vl_features.mean(1).unsqueeze(1).repeat(1, self.config.action_horizon, 1)
+
         fused_input = self.fusion_projector(
             torch.cat((his_traj_features, vl_features_mean, action_features), dim=2)
         )
@@ -484,7 +494,8 @@ class NegDriveDiffusionPlanner(nn.Module):
         vl_features: torch.Tensor,
         action_input: BatchFeature,
         init_actions: Optional[torch.Tensor] = None,
-        deterministic: bool = False
+        deterministic: bool = False,
+        attention_mask: Optional[torch.Tensor] = None
     ) -> BatchFeature:
         """
         Generates action trajectories via the configured sampling method.
@@ -529,8 +540,13 @@ class NegDriveDiffusionPlanner(nn.Module):
                 action_features = self.action_encoder(current_actions, t)
                 if hasattr(self, 'position_embedding'):
                     action_features += self.position_embedding(torch.arange(self.config.action_horizon, device=device))
-                
-                vl_embeds_mean = vl_embeds.mean(1).unsqueeze(1).repeat(1, self.config.action_horizon, 1)
+
+                if attention_mask is not None:
+                    sum_vl_embeds = self._masked_mean_pool(vl_embeds, attention_mask)
+                    vl_embeds_mean = sum_vl_embeds.unsqueeze(1).repeat(1, self.config.action_horizon, 1)
+                else:
+                    vl_embeds_mean = vl_embeds.mean(1).unsqueeze(1).repeat(1, self.config.action_horizon, 1)
+
                 fused_input = self.fusion_projector(
                     torch.cat((history_embeds, vl_embeds_mean, action_features), dim=2)
                 )
@@ -550,7 +566,8 @@ class NegDriveDiffusionPlanner(nn.Module):
                 index_batch = self.make_timesteps(B, i, device)
 
                 mean, logvar, _ = self.p_mean_variance(
-                    current_actions, t_batch, index_batch, vl_embeds, history_embeds, ego_embeds, deterministic
+                    current_actions, t_batch, index_batch, vl_embeds, history_embeds, ego_embeds, deterministic, 
+                    attention_mask=attention_mask
                 )
 
                 noise_sample = torch.randn_like(current_actions)
@@ -579,7 +596,8 @@ class NegDriveDiffusionPlanner(nn.Module):
                 index_batch = self.make_timesteps(B, i, device)
 
                 mean, logvar, _ = self.p_mean_variance(
-                    current_actions, t_batch, index_batch, vl_embeds, history_embeds, ego_embeds, deterministic
+                    current_actions, t_batch, index_batch, vl_embeds, history_embeds, ego_embeds, deterministic,
+                    attention_mask=attention_mask
                 )
 
                 std = torch.exp(0.5 * logvar)
@@ -606,7 +624,94 @@ class NegDriveDiffusionPlanner(nn.Module):
         final_actions = self.denorm_odo(current_actions)
 
         return BatchFeature(data={"pred_traj": final_actions})
-    
+
+
+    def _masked_mean_pool(self, hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        """
+        Computes a masked mean pooling over the sequence dimension.
+
+        This method ensures that only non-padding tokens contribute to the mean,
+        which is crucial for accurate representation when variable-length sequences
+        with padding are involved.
+
+        Args:
+            hidden_states (torch.Tensor): The input tensor of shape [B, Seq, H].
+            attention_mask (torch.Tensor): The attention mask of shape [B, Seq], where
+                1 indicates valid tokens and 0 indicates padding.
+        """
+        print("MASKED MEAN POOLING:检查")
+
+        mask = attention_mask.unsqueeze(-1).to(hidden_states.dtype)
+
+        summed = (hidden_states * mask).sum(dim=1)
+
+        counts = mask.sum(dim=1).clamp(min=1e-6)
+
+        return summed / counts
+
+
+
+    def get_grpo_reward(self,
+                        actions,        # BatchFeature(data={"pred_traj"})
+                        tokens_list,
+                        ):
+        """
+        Docstring for get_grpo_reward
+        
+        
+        """
+        final_actions = actions["pred_traj"]
+        # final_actions.detach()
+
+        unique_tokens = set(tokens_list)
+        metric_cache = {}
+        for token in unique_tokens:
+            path = self.metric_cache_loader.metric_cache_paths[token]
+            
+            path = '/UserData' + path # TODO 
+
+            with lzma.open(path, 'rb') as f:
+                metric_cache[token] = pickle.load(f)
+
+
+        rewards = self.reward_pdm(pred_traj=final_actions,
+                                 tokens_list=unique_tokens,
+                                 cache_dict=metric_cache)
+
+        return rewards
+
+
+
+    def _check_mask_ratio(self, attention_mask: torch.Tensor):
+        """check if input+image have padding"""
+        
+        mask_ratio = attention_mask.float().mean().item()
+        print(f"Attention mask ratio (non-padding tokens): {mask_ratio:.4f} (100%=no padding, 0%=all padding)")
+
+        seq_lengths = attention_mask.sum(dim=1).tolist()
+        print(f"Sequence lengths (non-padding tokens) per batch item: {seq_lengths}")
+
+
+
+
+    def _masked_mean_pool(hidden_states, attention_mask):
+        """
+        TODO 在 vl_embed mean 之前选择性加入，确保计算时只考虑非 padding tokens 的 hidden states
+
+        
+        hidden_states: [B, Seq, H]
+        attention_mask: [B, Seq]
+        """
+        mask = attention_mask.unsqueeze(-1).to(hidden_states.dtype)
+
+        summed = (hidden_states * mask).sum(dim=1)
+
+        counts = mask.sum(dim=1).clamp(min=1e-6)
+
+        return summed / counts
+
+
+
 
     def reward_pdm(
         self,

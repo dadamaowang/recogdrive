@@ -517,18 +517,3 @@ class NegDriveBackbone(nn.Module):
         print(f"Sequence lengths (non-padding tokens) per batch item: {seq_lengths}")
 
     
-    def _masked_mean_pool(hidden_states, attention_mask):
-        """
-        TODO 在 vl_embed mean 之前选择性加入，确保计算时只考虑非 padding tokens 的 hidden states
-
-        
-        hidden_states: [B, Seq, H]
-        attention_mask: [B, Seq]
-        """
-        mask = attention_mask.unsqueeze(-1).to(hidden_states.dtype)
-
-        summed = (hidden_states * mask).sum(dim=1)
-
-        counts = mask.sum(dim=1).clamp(min=1e-6)
-
-        return summed / counts

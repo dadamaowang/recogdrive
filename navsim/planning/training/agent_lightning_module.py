@@ -423,6 +423,20 @@ def compute_negdrive_advantages(
     return advantages, returns
 
 
+def check_mask_ratio(attention_mask: torch.Tensor):
+    """check if input+image have padding"""
+
+    print("检查文字 reasoning 之后的 mask ratio: ")
+    
+    mask_ratio = attention_mask.float().mean().item()
+    print(f"Attention mask ratio (non-padding tokens): {mask_ratio:.4f} (100%=no padding, 0%=all padding)")
+
+    seq_lengths = attention_mask.sum(dim=1).tolist()
+    print(f"Sequence lengths (non-padding tokens) per batch item: {seq_lengths}")
+
+
+
+
 
 class AgentLightningVLMRL(pl.LightningModule):
     """Pytorch lightning wrapper for negdrive agent."""
@@ -563,12 +577,12 @@ class AgentLightningVLMRL(pl.LightningModule):
         pixel_values_cat, questions, num_patches_list, history_trajectory = self.unpack_features(features)
         diff_dtype, diff_input = self.get_diff_input(features, history_trajectory)
 
-        print("检查图像样本大小：")
-        print(f"pixel_values_cat shape: {pixel_values_cat.shape}, "
-            f"size: {pixel_values_cat.numel() * 2 / 1e9:.2f}GB (bfloat16)")
+        # print("检查图像样本大小：")
+        # print(f"pixel_values_cat shape: {pixel_values_cat.shape}, "
+        #     f"size: {pixel_values_cat.numel() * 2 / 1e9:.2f}GB (bfloat16)")
 
         # After unpack_features:
-        self._log_vram("【显存检查01】after_unpack")
+        # self._log_vram("【显存检查01】after_unpack")
 
         # =============================
         # Rollout
@@ -597,6 +611,8 @@ class AgentLightningVLMRL(pl.LightningModule):
                         gen_output.attention_mask
                     )
 
+                    check_mask_ratio(gen_output.attention_mask)
+
                     last_hidden_states = fwd_output.hidden_states[-1].clone()
                     del fwd_output
                     if last_hidden_states.ndim == 2: 
@@ -616,7 +632,8 @@ class AgentLightningVLMRL(pl.LightningModule):
                 # get actions from planner 
                 actions = self.agent.action_head.get_action(
                     last_hidden_states.to(diff_dtype),
-                    diff_input
+                    diff_input,
+                    attention_mask = gen_output.attention_mask
                 )   # [B, T, 3]
                 del last_hidden_states
 
@@ -649,11 +666,11 @@ class AgentLightningVLMRL(pl.LightningModule):
                 all_rewards.append(reward.cpu())
                 del actions, reward
             
-                self._log_vram(f"【显存检查 02- Rollout】after_rollout_g{g}")
+                # self._log_vram(f"【显存检查 02- Rollout】after_rollout_g{g}")
 
         torch.cuda.empty_cache()
         # After torch.cuda.empty_cache() at end of rollout:
-        self._log_vram("【显存检查 03- Rollout Complete】after_rollout_complete")
+        # self._log_vram("【显存检查 03- Rollout Complete】after_rollout_complete")
 
         # =============================
         # Filter out failues
@@ -769,9 +786,6 @@ class AgentLightningVLMRL(pl.LightningModule):
                     pixel_values=pv_single,               # [NumPatches_b, C, H, W]
                     generation_output=gen_output_single,  # B=1
                 )  # [1, ResponseLen]  ← has grad_fn      
-
-            print("单样本 logprob 计算成功")   
-            # 这部分结束了，为何显存又暴涨？哪里又出现问题？数据/模型并行了？   
 
             # After compute_response_logprobs_tokens:
             self._log_vram(f"【显存检查 05- Failure Sample】after_forward_b{b}_g{g}")
