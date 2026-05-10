@@ -611,12 +611,6 @@ class AgentLightningVLMRL(pl.LightningModule):
                         gen_output.attention_mask
                     )
 
-                    check_mask_ratio(gen_output.attention_mask)
-
-                    last_hidden_states = fwd_output.hidden_states[-1].clone()
-                    del fwd_output
-                    if last_hidden_states.ndim == 2: 
-                        last_hidden_states = last_hidden_states.unsqueeze(0)
 
                     # ── Behavior policy log probs (old policy) ────────────
                     # Computed NOW, inside no_grad, same tokens
@@ -630,6 +624,18 @@ class AgentLightningVLMRL(pl.LightningModule):
 
                 
                 # get actions from planner 
+
+                check_mask_ratio(gen_output.attention_mask)
+
+                last_hidden_states = fwd_output.hidden_states[-1].clone()
+                del fwd_output
+                if last_hidden_states.ndim == 2: 
+                    last_hidden_states = last_hidden_states.unsqueeze(0)
+
+                # attn_mask_for_last_hidden_states = gen_output.attention_mask.clone()
+                # if attn_mask_for_last_hidden_states.ndim == 2:
+                #     attn_mask_for_last_hidden_states = attn_mask_for_last_hidden_states.unsqueeze(0)
+
                 actions = self.agent.action_head.get_action(
                     last_hidden_states.to(diff_dtype),
                     diff_input,

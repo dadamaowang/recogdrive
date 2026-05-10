@@ -358,12 +358,12 @@ class NegDriveDiffusionPlanner(nn.Module):
             pos_ids = torch.arange(action_features.shape[1], device=x.device)
             action_features = action_features + self.position_embedding(pos_ids)
 
-
-        summed_embeds = self._masked_mean_pool(vl_features, attention_mask=attention_mask)
-        vl_features_mean = summed_embeds.unsqueeze(1).repeat(1, self.config.action_horizon, 1)
-
         if attention_mask is not None:
-            summed_embeds = self._masked_mean_pool(vl_features, attention_mask=attention_mask)
+            print("检查 attention mask:")
+            print(attention_mask)
+
+
+            summed_embeds = self._masked_mean_pool(vl_features, attention_mask)
             vl_features_mean = summed_embeds.unsqueeze(1).repeat(1, self.config.action_horizon, 1)
         else:
             vl_features_mean = vl_features.mean(1).unsqueeze(1).repeat(1, self.config.action_horizon, 1)
@@ -421,6 +421,7 @@ class NegDriveDiffusionPlanner(nn.Module):
             model_log_variance = torch.log(sigma**2 + 1e-20)
 
         return model_mean, model_log_variance, x_recon
+
 
     def forward(self, vl_features: torch.Tensor, action_input: BatchFeature) -> BatchFeature:
         """
@@ -626,7 +627,10 @@ class NegDriveDiffusionPlanner(nn.Module):
         return BatchFeature(data={"pred_traj": final_actions})
 
 
-    def _masked_mean_pool(self, hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    def _masked_mean_pool(self, 
+                          hidden_states: torch.Tensor, 
+                          attention_mask: torch.Tensor
+                          ) -> torch.Tensor:
         """
         Computes a masked mean pooling over the sequence dimension.
 
@@ -690,27 +694,6 @@ class NegDriveDiffusionPlanner(nn.Module):
 
         seq_lengths = attention_mask.sum(dim=1).tolist()
         print(f"Sequence lengths (non-padding tokens) per batch item: {seq_lengths}")
-
-
-
-
-    def _masked_mean_pool(hidden_states, attention_mask):
-        """
-        TODO 在 vl_embed mean 之前选择性加入，确保计算时只考虑非 padding tokens 的 hidden states
-
-        
-        hidden_states: [B, Seq, H]
-        attention_mask: [B, Seq]
-        """
-        mask = attention_mask.unsqueeze(-1).to(hidden_states.dtype)
-
-        summed = (hidden_states * mask).sum(dim=1)
-
-        counts = mask.sum(dim=1).clamp(min=1e-6)
-
-        return summed / counts
-
-
 
 
     def reward_pdm(
