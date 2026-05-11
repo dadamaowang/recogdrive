@@ -11,7 +11,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=check_0510
+EXP_NAME=debug
 FAST_DEV_RUN=true
 
 export MASTER_PORT=63669
@@ -43,7 +43,7 @@ torchrun \
     dataloader.params.batch_size=4 \
     dataloader.params.num_workers=8 \
     trainer.params.fast_dev_run=${FAST_DEV_RUN} \
-    trainer.params.max_epochs=5 \
+    trainer.params.max_epochs=10 \
     trainer.params.devices=${GPUS} \
     trainer.params.strategy="ddp_find_unused_parameters_false" \
     trainer.params.limit_train_batches=0.1 \
@@ -53,8 +53,8 @@ torchrun \
     agent.vlm_path="/UserData/xnq/my_models/Policy/ReCogDrive-VLM-2B" \
     agent.vlm_size="small" \
     agent.diff_path="/UserData/xnq/my_models/Planner/ReCogDrive-2B-RL/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
-    agent.per_sample_rollout=3 \
-    agent.bag_g=2 \
+    agent.per_sample_rollout=4 \
+    agent.bag_g=4 \
     agent.max_text_tokens=128 \
     agent.max_padding_len=2800 \
     agent.vlm_lr=1e-5 \

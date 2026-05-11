@@ -496,7 +496,7 @@ class NegDriveDiffusionPlanner(nn.Module):
         action_input: BatchFeature,
         init_actions: Optional[torch.Tensor] = None,
         deterministic: bool = False,
-        attention_mask: Optional[torch.Tensor] = None
+        attention_mask: Optional[torch.Tensor] = None,
     ) -> BatchFeature:
         """
         Generates action trajectories via the configured sampling method.
@@ -515,7 +515,14 @@ class NegDriveDiffusionPlanner(nn.Module):
         Returns:
             BatchFeature: A batch containing the final predicted trajectory.
         """
+
         vl_embeds = self.feature_encoder(vl_features)
+
+        # Latent Stability Check 02
+        vl_embeds_mean = vl_embeds.float().mean().item()
+        vl_embeds_std = vl_embeds.float().std().item()
+        vl_embeds_norm = torch.linalg.vector_norm(vl_embeds.float(), dim=-1).mean().item()
+
         
         history_embeds = self.his_traj_encoder(
             action_input.his_traj.unsqueeze(1)
@@ -624,7 +631,11 @@ class NegDriveDiffusionPlanner(nn.Module):
 
         final_actions = self.denorm_odo(current_actions)
 
-        return BatchFeature(data={"pred_traj": final_actions})
+        return BatchFeature(data={"pred_traj": final_actions,
+                                  "vl_embeds_mean": vl_embeds_mean,
+                                  "vl_embeds_std": vl_embeds_std,
+                                  "vl_embeds_norm": vl_embeds_norm
+                            })
 
 
     def _masked_mean_pool(self, 

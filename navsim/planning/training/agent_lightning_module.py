@@ -636,10 +636,20 @@ class AgentLightningVLMRL(pl.LightningModule):
                 # if attn_mask_for_last_hidden_states.ndim == 2:
                 #     attn_mask_for_last_hidden_states = attn_mask_for_last_hidden_states.unsqueeze(0)
 
+
+                # Latent Stability Check 01
+                vl_features_mean = last_hidden_states.float().mean().item()
+                vl_features_std = last_hidden_states.float().std().item()
+                self.log(f"{logging_prefix}/vl_features_mean", vl_features_mean, 
+                                on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+                self.log(f"{logging_prefix}/vl_features_std", vl_features_std, 
+                                on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+
+
                 actions = self.agent.action_head.get_action(
                     last_hidden_states.to(diff_dtype),
                     diff_input,
-                    attention_mask = gen_output.attention_mask
+                    attention_mask = gen_output.attention_mask,
                 )   # [B, T, 3]
                 del last_hidden_states
 
@@ -661,8 +671,19 @@ class AgentLightningVLMRL(pl.LightningModule):
                 [ 2.7896e+00,  1.7507e-01,  1.3273e-01],
                 [ 3.1623e+00,  1.4215e-01,  1.3982e-01],
                 [ 3.7028e+00,  2.4421e-01,  1.5477e-01],
-                [ 3.5862e+00,  2.0090e-01,  1.6826e-01]]], device='cuda:0')}
+                [ 3.5862e+00,  2.0090e-01,  1.6826e-01]]], device='cuda:0')
+                ============= Other custome Monitor log
+                "vl_embeds", etc 
+    
+                }
                 """
+                self.log(f"{logging_prefix}/vl_embeds_mean", actions["vl_embeds_mean"],
+                on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+                self.log(f"{logging_prefix}/vl_embeds_std", actions["vl_embeds_std"],
+                on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+                self.log(f"{logging_prefix}/vl_embeds_norm", actions["vl_embeds_norm"],
+                on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+
 
                 # get rewards
                 reward = self.agent.action_head.get_grpo_reward(
