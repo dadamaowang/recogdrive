@@ -519,7 +519,7 @@ class NegDriveDiffusionPlanner(nn.Module):
         vl_embeds = self.feature_encoder(vl_features)
 
         # Latent Stability Check 02
-        vl_embeds_mean = vl_embeds.float().mean().item()
+        vl_embeds_mean_value = vl_embeds.float().mean().item()
         vl_embeds_std = vl_embeds.float().std().item()
         vl_embeds_norm = torch.linalg.vector_norm(vl_embeds.float(), dim=-1).mean().item()
 
@@ -632,7 +632,7 @@ class NegDriveDiffusionPlanner(nn.Module):
         final_actions = self.denorm_odo(current_actions)
 
         return BatchFeature(data={"pred_traj": final_actions,
-                                  "vl_embeds_mean": vl_embeds_mean,
+                                  "vl_embeds_mean": vl_embeds_mean_value,
                                   "vl_embeds_std": vl_embeds_std,
                                   "vl_embeds_norm": vl_embeds_norm
                             })

@@ -584,6 +584,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         # After unpack_features:
         # self._log_vram("【显存检查01】after_unpack")
 
+
         # =============================
         # Rollout
         # =============================
@@ -593,7 +594,6 @@ class AgentLightningVLMRL(pl.LightningModule):
 
         with torch.no_grad():            
             for g in range(self.G):  
-
                 with torch.autocast("cuda", dtype=torch.bfloat16):
                     # Generate text reasoning
                     gen_output = self.agent.vlm.generate_text_actions(
@@ -611,7 +611,6 @@ class AgentLightningVLMRL(pl.LightningModule):
                         gen_output.attention_mask
                     )
 
-
                     # ── Behavior policy log probs (old policy) ────────────
                     # Computed NOW, inside no_grad, same tokens
                     # This is π_old used in ratio π_θ/π_old
@@ -622,7 +621,6 @@ class AgentLightningVLMRL(pl.LightningModule):
                     )
                     all_logprobs_old_tokens.append(old_token_log_probs.cpu())
 
-                
                 # get actions from planner 
 
                 check_mask_ratio(gen_output.attention_mask)
@@ -636,13 +634,17 @@ class AgentLightningVLMRL(pl.LightningModule):
                 # if attn_mask_for_last_hidden_states.ndim == 2:
                 #     attn_mask_for_last_hidden_states = attn_mask_for_last_hidden_states.unsqueeze(0)
 
-
                 # Latent Stability Check 01
                 vl_features_mean = last_hidden_states.float().mean().item()
                 vl_features_std = last_hidden_states.float().std().item()
-                self.log(f"{logging_prefix}/vl_features_mean", vl_features_mean, 
+
+                # 转化成 torch.Tensor 不然没法被 log 
+                vl_features_mean = BatchFeature(data={"vl_features_mean": vl_features_mean})
+                vl_features_std = BatchFeature(data={"vl_features_std": vl_features_std})
+
+                self.logger.log(f"{logging_prefix}/vl_features_mean", vl_features_mean["vl_features_mean"], 
                                 on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
-                self.log(f"{logging_prefix}/vl_features_std", vl_features_std, 
+                self.logger.log(f"{logging_prefix}/vl_features_std", vl_features_std["vl_features_std"], 
                                 on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
 
 
@@ -683,7 +685,6 @@ class AgentLightningVLMRL(pl.LightningModule):
                 on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
                 self.log(f"{logging_prefix}/vl_embeds_norm", actions["vl_embeds_norm"],
                 on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
-
 
                 # get rewards
                 reward = self.agent.action_head.get_grpo_reward(
@@ -791,7 +792,6 @@ class AgentLightningVLMRL(pl.LightningModule):
             gen_output_g = all_gen_output[g]
             old_lp_bg = all_logprobs_old_tokens[g][b:b+1].to(self.device) # [1, ResponseLen]
 
-            from dataclasses import replace 
             gen_output_single = NegDriveGenOutput(
                 full_ids=gen_output_g.full_ids[b:b+1],  # [1, SeqLen]
                 attention_mask=gen_output_g.attention_mask[b:b+1],  # [1, SeqLen]
@@ -826,14 +826,9 @@ class AgentLightningVLMRL(pl.LightningModule):
             num_tokens_b     = eos_mask_b.sum().clamp(min=1)
 
 
-            if self.automatic_optimization:
-                loss_b = per_token_loss_b.sum() / num_tokens_b   # scalar 
-                total_loss    = total_loss + loss_b / global_num_failures
-                total_pg_loss += loss_b.item() / global_num_failures
-            else:
-                loss_b = per_token_loss_b.sum() / num_tokens_b / global_num_failures   # scaled (1/global_num_failures) loss 
-                self.manual_backward(loss_b)
-                total_pg_loss += loss_b.item() / global_num_failures
+            loss_b = per_token_loss_b.sum() / num_tokens_b / global_num_failures   # scaled (1/global_num_failures) loss 
+            self.manual_backward(loss_b)
+            total_pg_loss += loss_b.item() / global_num_failures
 
             # After loss computation:
             self._log_vram(f"【显存检查 06- Failure Sample】after_loss_b{b}_g{g}")
