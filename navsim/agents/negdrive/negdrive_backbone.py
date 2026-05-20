@@ -16,6 +16,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from dataclasses import dataclass
+import os
 
 from transformers import AutoModel, AutoTokenizer
 from transformers.modeling_outputs import CausalLMOutputWithPast
@@ -40,7 +41,7 @@ You are a vehicle trajectory prediction model for autonomous driving. Your task 
 For evaluation, use the **PDM Score**, which combines these metrics: **PDM Score** = NC * DAC * (5*TTC + 5*EP + 2*C + 0*DDC) / 12.
 Your predictions will be evaluated through a non-reactive 4-second simulation with an LQR controller and background actors following their recorded trajectories. The better your predictions, the higher your score.
 """
-# TODO 这个 system prompt 有空也得改下
+
 
 
 @dataclass  # NOTE 记得 dataclass dec
@@ -82,6 +83,7 @@ class NegDriveBackbone(nn.Module):
                  checkpoint_path: str,
                  device: str = "cuda",
                  max_padding_len: int = 2800,
+                 mode: Literal["train", "eval"] = "train",
                  # TODO 添加 lora config 
                  ):
         """
@@ -101,11 +103,11 @@ class NegDriveBackbone(nn.Module):
         
         self.max_padding_len = max_padding_len
 
+        self.mode = mode
+
         print(f"Initializing backbone of type: '{self.model_type}' from path: '{checkpoint_path}'")
 
         if self.model_type == "internvl":
-            # TODO 头 + LoRA
-            # LoRA 策略问题
 
             self.model = AutoModel.from_pretrained(     
                 checkpoint_path,
@@ -123,10 +125,22 @@ class NegDriveBackbone(nn.Module):
             # Load model-specific configuration
             self._configure_internvl()
             self.num_image_token = 256
-            
-            self._set_internvl_finetune_mode()  
 
+            # # Check for LoRA modules and load if available  TODO 
+            # lora_path = f"{checkpoint_path}/lora_weights.pt"
+            # if os.path.exists(lora_path):
+            #     self.model.language_model.load_state_dict(torch.load(lora_path), strict=False)
+            #     print("LoRA weights loaded successfully.")
+
+
+            if self.mode == "train":
+                self._set_internvl_finetune_mode()  
+            elif self.mode == "eval":
+                for param in self.model.parameters():
+                    param.requires_grad = False
+                print("All model parameters frozen for eval mode.")
             
+
         elif self.model_type == 'qwen':
             raise NotImplementedError
             # TODO qwen 也得 config

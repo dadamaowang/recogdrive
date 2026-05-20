@@ -12,7 +12,7 @@
 
 import pdb
 
-from typing import Any, List, Dict, Optional, Union
+from typing import Any, List, Dict, Optional, Union, Literal
 import os
 import torch
 from torch.optim import Optimizer
@@ -46,6 +46,7 @@ class NegDriveAgent(AbstractAgent):
         trajectory_sampling: TrajectorySampling,    # TODO
 
         metric_cache_path: Optional[str] = None,    # for validation 
+        mode: Literal["train", "eval"] = "train",   # control certain behaviors (e.g. caching, rollout, etc.) based on mode
 
         # ========== VLM (POLICY) ==========
         vlm_path: str,
@@ -102,6 +103,7 @@ class NegDriveAgent(AbstractAgent):
             checkpoint_path=self.vlm_path,
             device=self.device,
             max_padding_len=self.max_padding_len,
+            mode=mode,
         )
 
         
@@ -158,7 +160,7 @@ class NegDriveAgent(AbstractAgent):
         self._verify_model_dtype(self.action_head, "Diffusion Planner")
 
 
-    # 🔑 追加以下自检逻辑（打印各子模块加载状态）
+        # 🔑 追加以下自检逻辑（打印各子模块加载状态）
         print(f"✅ Diffusion planner loaded: {len(cleaned_state_dict) - len(real_unexpected)} keys matched")
         print(f"🔍 核心子模块加载验证:")
         for name, module in self.action_head.named_children():

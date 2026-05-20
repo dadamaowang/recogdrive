@@ -22,6 +22,8 @@ diff_sampling_method: 'ddim'
 
 metric_cache_path: ''
 
+mode: 'train'  
+
 per_sample_rollout: 4
 bag_g: 4
 max_text_tokens: 128

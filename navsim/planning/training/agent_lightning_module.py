@@ -28,6 +28,8 @@ from navsim.agents.negdrive.negdrive_backbone import NegDriveGenOutput
 
 from omegaconf import DictConfig
 
+import os
+
 
 def decode_paths_from_tensor(path_tensor: torch.Tensor) -> List[str]:
     """
@@ -905,14 +907,14 @@ class AgentLightningVLMRL(pl.LightningModule):
                 "1. Visual perception from front camera view\n"
                 f"2. Historical motion context (last 4 timesteps):{history_str}\n"
                 f"3. Active navigation command: [{command_str_sample.upper()}]"
-            )     # TODO 【TOEXP】
+            )   
 
             output_requirements = (
                 "\nOutput requirements:\n- Predict 8 future trajectory points\n"
                 "- Each point format: (x:float, y:float, heading:float)\n"
                 "- Use [PT, ...] to encapsulate the trajectory\n"
                 "- Maintain numerical precision to 2 decimal places"
-            )   # TODO 【TOEXP】
+            )   
 
             questions.append(f"{prompt}{output_requirements}")
         
@@ -943,18 +945,22 @@ class AgentLightningVLMRL(pl.LightningModule):
         """
         Save only LoRA adapter weights -- skip everything else.
         """
-        lora_state_dict = {
-            k: v
-            for k, v in checkpoint['state_dict'].items()
-            if 'lora_' in k   # only LoRA adapter weights
-        }
+        ckpt_callback = self.trainer.checkpoint_callbacks[0]  # assumes single checkpoint callback
+        ckpt_path = ckpt_callback.last_model_path
+        ckpt_name = os.path.splittext(os.path.basename(ckpt_path))[0]
 
-        checkpoint['state_dict'] = lora_state_dict
+        lora_dir = os.path.join(
+            os.path.dirname(ckpt_path),
+            f"{ckpt_name}_lora"
+        )
+        os.makedirs(lora_dir, exist_ok=True)
+        self.agent.vlm.language_model.save_pretrained(lora_dir)
 
-        print(f"Checkpoint saved: {len(lora_state_dict)} LoRA tensors "
-            f"({sum(v.numel() for v in lora_state_dict.values()):,} parameters)")
+        print(f"[LoRA SAVED] {lora_dir}")
 
+        checkpoint.clear()
 
+        
 
     # def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
     #     """

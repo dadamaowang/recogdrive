@@ -212,9 +212,9 @@ def main(cfg: DictConfig) -> None:
             VRAMMonitor(), 
             LearningRateMonitor(logging_interval="step"),
             OptimizerHealthMonitor(),
-            # ModelCheckpoint(monitor="val/best_of_g_reward", mode="max", 
-            #                 save_top_k=3, every_n_epochs=1, 
-            #                 filename="best_g_reward-{epoch:02d}-{val/best_of_g_reward:.4f}"),
+            ModelCheckpoint(monitor="val/best_of_g_reward", mode="max", 
+                            save_top_k=3, every_n_train_steps=1, 
+                            filename="best_g_reward-{step:08d}-{val/best_of_g_reward:.4f}"),
         ]
         )
         # callbacks: Train normally, but also run this checkpoint-saving logic during training.
