@@ -457,7 +457,6 @@ class AgentLightningVLMRL(pl.LightningModule):
         self.G = agent.per_sample_rollout
         self.bag_g = agent.bag_g
 
-        
 
         self.automatic_optimization = False  # NOTE negdrive 算法的负样本动态优化和不等长梯度特性，要求必须手动优化
 
@@ -644,9 +643,9 @@ class AgentLightningVLMRL(pl.LightningModule):
                 vl_features_mean = BatchFeature(data={"vl_features_mean": vl_features_mean})
                 vl_features_std = BatchFeature(data={"vl_features_std": vl_features_std})
 
-                self.logger.log(f"{logging_prefix}/vl_features_mean", vl_features_mean["vl_features_mean"], 
+                self.log(f"{logging_prefix}/vl_features_mean", vl_features_mean["vl_features_mean"], 
                                 on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
-                self.logger.log(f"{logging_prefix}/vl_features_std", vl_features_std["vl_features_std"], 
+                self.log(f"{logging_prefix}/vl_features_std", vl_features_std["vl_features_std"], 
                                 on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
 
 
@@ -945,22 +944,24 @@ class AgentLightningVLMRL(pl.LightningModule):
         """
         Save only LoRA adapter weights -- skip everything else.
         """
+        print("Save Checkpoint...")
+
         ckpt_callback = self.trainer.checkpoint_callbacks[0]  # assumes single checkpoint callback
         ckpt_path = ckpt_callback.last_model_path
-        ckpt_name = os.path.splittext(os.path.basename(ckpt_path))[0]
+        ckpt_name = os.path.splitext(os.path.basename(ckpt_path))[0]
 
         lora_dir = os.path.join(
             os.path.dirname(ckpt_path),
             f"{ckpt_name}_lora"
         )
         os.makedirs(lora_dir, exist_ok=True)
-        self.agent.vlm.language_model.save_pretrained(lora_dir)
+        self.agent.vlm.model.language_model.save_pretrained(lora_dir)
 
         print(f"[LoRA SAVED] {lora_dir}")
 
         checkpoint.clear()
 
-        
+
 
     # def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
     #     """

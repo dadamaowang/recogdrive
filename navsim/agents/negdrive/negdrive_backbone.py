@@ -21,7 +21,7 @@ import os
 from transformers import AutoModel, AutoTokenizer
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-from peft import LoraConfig, get_peft_model, TaskType
+from peft import LoraConfig, get_peft_model, TaskType, PeftModel
 
 from .utils.conversation import get_conv_template
 
@@ -81,6 +81,7 @@ class NegDriveBackbone(nn.Module):
     def __init__(self,
                  model_type: str,
                  checkpoint_path: str,
+                 vlm_lora_path: Optional[str] = None,
                  device: str = "cuda",
                  max_padding_len: int = 2800,
                  mode: Literal["train", "eval"] = "train",
@@ -126,16 +127,23 @@ class NegDriveBackbone(nn.Module):
             self._configure_internvl()
             self.num_image_token = 256
 
-            # # Check for LoRA modules and load if available  TODO 
-            # lora_path = f"{checkpoint_path}/lora_weights.pt"
-            # if os.path.exists(lora_path):
-            #     self.model.language_model.load_state_dict(torch.load(lora_path), strict=False)
-            #     print("LoRA weights loaded successfully.")
 
+            # TODO resume training 的 
 
             if self.mode == "train":
                 self._set_internvl_finetune_mode()  
             elif self.mode == "eval":
+                print("测试模式")
+
+                # Check for LoRA modules and load if available  TODO 
+                if vlm_lora_path is not None and os.path.exists(vlm_lora_path):
+                    self.model.language_model = PeftModel.from_pretrained(
+                        self.model.language_model,
+                        vlm_lora_path,
+                        device_map=self.device
+                    )
+                    print(f"LoRA weights loaded from {vlm_lora_path}")
+
                 for param in self.model.parameters():
                     param.requires_grad = False
                 print("All model parameters frozen for eval mode.")

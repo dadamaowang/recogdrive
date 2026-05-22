@@ -51,6 +51,7 @@ torchrun \
     trainer.params.precision=bf16-mixed \
     agent.metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache_train" \
     agent.vlm_path="/UserData/xnq/my_models/Policy/ReCogDrive-VLM-2B" \
+    agent.vlm_lora_path="/UserData/xnq/navsim_workspace/exp/debug_ckpt_check/2026.05.21.16.55.00/tb/debug_ckpt_check/checkpoints/last_lora" \
     agent.vlm_size="small" \
     agent.diff_path="/UserData/xnq/my_models/Planner/ReCogDrive-2B-RL/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
     agent.per_sample_rollout=4 \

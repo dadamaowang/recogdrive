@@ -9,6 +9,7 @@ trajectory_sampling:
 
 
 vlm_path: ''
+vlm_lora_path: ''
 vlm_type: 'internvl'
 vlm_size: 'small'
 vlm_lr: 1e-5

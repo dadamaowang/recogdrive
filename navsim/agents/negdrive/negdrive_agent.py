@@ -50,6 +50,7 @@ class NegDriveAgent(AbstractAgent):
 
         # ========== VLM (POLICY) ==========
         vlm_path: str,
+        vlm_lora_path: Optional[str] = None,  
         vlm_type: str = "internvl",
         vlm_size: str = "large",       
        
@@ -93,14 +94,16 @@ class NegDriveAgent(AbstractAgent):
         # VLM (policy network)
         # -----------------------        
         self.vlm_path = vlm_path
+        self.vlm_lora_path = vlm_lora_path
         self.vlm_type = vlm_type   
         self.vlm_size = vlm_size    
 
         self.max_padding_len = max_padding_len
 
-        self.vlm = NegDriveBackbone(     # TODO ori: ReCogDriveBackbone
+        self.vlm = NegDriveBackbone(    
             model_type=self.vlm_type,
             checkpoint_path=self.vlm_path,
+            vlm_lora_path=self.vlm_lora_path,
             device=self.device,
             max_padding_len=self.max_padding_len,
             mode=mode,
