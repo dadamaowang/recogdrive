@@ -120,25 +120,23 @@ def run_pdm_score(args: List[Dict[str, Union[List[str], DictConfig]]]) -> List[D
 
     agent: AbstractAgent = instantiate(cfg.agent)   
 
+    metric_cache_loader = MetricCacheLoader(Path(cfg.metric_cache_path))
+    scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
+    scene_filter.log_names = log_names
+    scene_filter.tokens = tokens
+    scene_loader = SceneLoader(
+        sensor_blobs_path=Path(cfg.sensor_blobs_path),
+        data_path=Path(cfg.navsim_log_path),
+        scene_filter=scene_filter,
+        sensor_config=agent.get_sensor_config(),
+        load_image_path=True
+    )
 
+    tokens_to_evaluate = list(set(scene_loader.tokens) & set(metric_cache_loader.tokens))
+    tokens_to_evaluate = sorted(tokens_to_evaluate) 
 
+    print("成功")
 
-
-    # metric_cache_loader = MetricCacheLoader(Path(cfg.metric_cache_path))
-    # scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
-    # scene_filter.log_names = log_names
-    # scene_filter.tokens = tokens
-    # scene_loader = SceneLoader(
-    #     sensor_blobs_path=Path(cfg.sensor_blobs_path),
-    #     data_path=Path(cfg.navsim_log_path),
-    #     scene_filter=scene_filter,
-    #     sensor_config=agent.get_sensor_config(),
-    #     load_image_path=True
-    # )
-
-
-    # tokens_to_evaluate = list(set(scene_loader.tokens) & set(metric_cache_loader.tokens))
-    # tokens_to_evaluate = sorted(tokens_to_evaluate) 
     
     # pdm_results: List[Dict[str, Any]] = []
     # for idx, (token) in enumerate(tokens_to_evaluate):

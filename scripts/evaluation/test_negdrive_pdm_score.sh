@@ -33,16 +33,15 @@ export PORT=${PORT}
 echo "GPUS: ${GPUS}"
 export CUDA_LAUNCH_BLOCKING=1
 
-
-CHECKPOINT="/path/to/recogdrive.ckpt"
-
+export HYDRA_FULL_ERROR=1
 
 torchrun \
     --nnodes=1 \
     --nproc_per_node=${GPUS} \
-    $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_pdm_score_recogdrive.py \
+    $NAVSIM_DEVKIT_ROOT/navsim/planning/script/test_pdm_score.py \
     train_test_split=$TRAIN_TEST_SPLIT \
     experiment_name=$EXP_NAME \
+    metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache/" \
     agent=negdrive_agent \
     agent.mode="eval" \
     cache_path=null \
