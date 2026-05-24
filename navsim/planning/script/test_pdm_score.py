@@ -135,46 +135,43 @@ def run_pdm_score(args: List[Dict[str, Union[List[str], DictConfig]]]) -> List[D
     tokens_to_evaluate = list(set(scene_loader.tokens) & set(metric_cache_loader.tokens))
     tokens_to_evaluate = sorted(tokens_to_evaluate) 
 
-    print("成功")
 
-    
-    # pdm_results: List[Dict[str, Any]] = []
-    # for idx, (token) in enumerate(tokens_to_evaluate):
-    #     if dist.get_rank() == 0:
-    #         logger.info(f"Rank {dist.get_rank()} processing scenario {idx+1} / {len(tokens_to_evaluate)} in thread_id={thread_id}, node_id={node_id}")
+    pdm_results: List[Dict[str, Any]] = []
+    for idx, (token) in enumerate(tokens_to_evaluate):
+        if dist.get_rank() == 0:
+            logger.info(f"Rank {dist.get_rank()} processing scenario {idx+1} / {len(tokens_to_evaluate)} in thread_id={thread_id}, node_id={node_id}")
 
-    #     score_row: Dict[str, Any] = {"token": token, "valid": True}
-    #     try:
-    #         metric_cache_path = metric_cache_loader.metric_cache_paths[token]
-    #         with lzma.open(metric_cache_path, "rb") as f:
-    #             metric_cache: MetricCache = pickle.load(f)
+        score_row: Dict[str, Any] = {"token": token, "valid": True}
+        try:
+            metric_cache_path = metric_cache_loader.metric_cache_paths[token]
+            metric_cache_path = "/UserData/" + metric_cache_path
+            with lzma.open(metric_cache_path, "rb") as f:
+                metric_cache: MetricCache = pickle.load(f)
 
-    #         requires_scene = False
-    #         agent_input = scene_loader.get_agent_input_from_token(token)
-    #         if requires_scene:
-    #             scene = scene_loader.get_scene_from_token(token)
-    #             trajectory = agent.compute_trajectory(agent_input, scene)
-    #         else:
-    #             trajectory = agent.compute_trajectory(agent_input)
-    #         pdm_result = pdm_score(
-    #             metric_cache=metric_cache,
-    #             model_trajectory=trajectory,
-    #             future_sampling=simulator.proposal_sampling,
-    #             simulator=simulator,
-    #             scorer=scorer,
-    #         )
-    #         score_row.update(asdict(pdm_result))
-    #         score_row['rank'] = dist.get_rank()
-    #     except Exception as e:
-    #         logger.warning(f"----------- Agent failed for token {token}:")
-    #         traceback.print_exc()
-    #         score_row["valid"] = False
+            requires_scene = False
+            agent_input = scene_loader.get_agent_input_from_token(token)
+            if requires_scene:
+                scene = scene_loader.get_scene_from_token(token)
+                trajectory = agent.compute_trajectory(agent_input, scene)
+            else:
+                trajectory = agent.compute_trajectory(agent_input)
+            pdm_result = pdm_score(
+                metric_cache=metric_cache,
+                model_trajectory=trajectory,
+                future_sampling=simulator.proposal_sampling,
+                simulator=simulator,
+                scorer=scorer,
+            )
+            score_row.update(asdict(pdm_result))
+            score_row['rank'] = dist.get_rank()
+        except Exception as e:
+            logger.warning(f"----------- Agent failed for token {token}:")
+            traceback.print_exc()
+            score_row["valid"] = False
 
-    #     pdm_results.append(score_row)
-    # serialized_score_rows = pickle.dumps(pdm_results)
-    # return serialized_score_rows
-
-
+        pdm_results.append(score_row)
+    serialized_score_rows = pickle.dumps(pdm_results)
+    return serialized_score_rows
 
 
 
@@ -236,9 +233,70 @@ def main(cfg: DictConfig) -> None:
 
     serialized_score_rows = run_pdm_score(data_points)
 
+    device = torch.device("cpu" if not torch.cuda.is_available() else "cuda")
+
+    serialized_tensor = torch.ByteTensor(list(serialized_score_rows)).to(device)
+
+    local_size = len(serialized_tensor)
+    size_list = [torch.tensor(local_size).to(device) for _ in range(dist.get_world_size())]
+    dist.all_gather(size_list, torch.tensor(local_size).to(device))
+
+    max_size = max(size_list).item() 
+
+    if local_size < max_size:
+        padded_tensor = torch.cat([serialized_tensor, torch.zeros(max_size - local_size, dtype=torch.uint8).to(device)])
+    else:
+        padded_tensor = serialized_tensor
+
+    gathered_results = [torch.empty_like(padded_tensor) for _ in range(dist.get_world_size())]
+    dist.all_gather(gathered_results, padded_tensor)
+
+    if local_size < max_size:
+        padded_tensor = torch.cat([serialized_tensor, torch.zeros(max_size - local_size, dtype=torch.uint8).to(device)])
+    else:
+        padded_tensor = serialized_tensor
+
+    gathered_results = [torch.empty_like(padded_tensor) for _ in range(dist.get_world_size())]
+    dist.all_gather(gathered_results, padded_tensor)
+
+    if dist.get_rank() == 0:
+        final_results = []
+        for gathered_tensor in gathered_results:
+            gathered_tensor = gathered_tensor[:local_size]  
+            serialized_data = gathered_tensor.cpu().numpy().tobytes()
+            final_results.extend(pickle.loads(serialized_data))  # 
+    
+        pdm_score_df = pd.DataFrame(final_results)
+
+        num_sucessful_scenarios = pdm_score_df["valid"].sum()
+        num_failed_scenarios = len(pdm_score_df) - num_sucessful_scenarios
+        average_row = pdm_score_df.drop(columns=["token", "valid",'rank']).mean(skipna=True)
+        average_row["token"] = "average"
+        average_row["valid"] = pdm_score_df["valid"].all()
+        average_row["rank"] = "0"
+        pdm_score_df.loc[len(pdm_score_df)] = average_row
+
+        save_path = Path(cfg.output_dir)
+        timestamp = datetime.now().strftime("%Y.%m.%d.%H.%M.%S")
+        pdm_score_df.to_csv(save_path / f"{timestamp}.csv")
+
+        logger.info(
+            f"""
+            Finished running evaluation.
+                Number of successful scenarios: {num_sucessful_scenarios}.
+                Number of failed scenarios: {num_failed_scenarios}.
+                Final average score of valid results: {pdm_score_df['score'].mean()}.
+                Results are stored in: {save_path / f"{timestamp}.csv"}.
+            """
+        )
 
 
     print("成功")
+
+
+
+
+
 
 
 

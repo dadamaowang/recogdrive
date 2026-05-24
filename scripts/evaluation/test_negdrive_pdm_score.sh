@@ -44,6 +44,7 @@ torchrun \
     metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache/" \
     agent=negdrive_agent \
     agent.mode="eval" \
+    agent.metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache/" \
     cache_path=null \
     force_cache_computation=false \
     agent.vlm_path="/UserData/xnq/my_models/Policy/ReCogDrive-VLM-2B" \
