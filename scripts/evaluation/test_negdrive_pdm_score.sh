@@ -33,7 +33,7 @@ export PORT=${PORT}
 echo "GPUS: ${GPUS}"
 export CUDA_LAUNCH_BLOCKING=1
 
-export HYDRA_FULL_ERROR=1
+# export HYDRA_FULL_ERROR=1
 
 torchrun \
     --nnodes=1 \

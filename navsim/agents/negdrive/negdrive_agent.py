@@ -89,7 +89,6 @@ class NegDriveAgent(AbstractAgent):
         self.metric_cache_path = metric_cache_path
         self.device = device or f"cuda:{int(os.getenv('LOCAL_RANK', 0))}"
 
-
         # -----------------------
         # VLM (policy network)
         # -----------------------        
@@ -109,7 +108,6 @@ class NegDriveAgent(AbstractAgent):
             mode=mode,
         )
 
-        
         # -----------------------
         # Diffusion planner (frozen)
         # -----------------------
@@ -366,7 +364,75 @@ class NegDriveAgent(AbstractAgent):
                 tokens_list = None
                 ) -> Dict[str, torch.Tensor]:
         
-        pass
+        for key, tensor in features.items():
+            if isinstance(tensor, torch.Tensor):
+                features[key] = tensor.cuda()
+        
+        model_dtype = next(self.action_head.parameters()).dtype
+
+        history_trajectory = features["history_trajectory"].cuda()
+        high_command_one_hot = features["high_command_one_hot"].cuda()
+        
+        if history_trajectory.ndim == 2: history_trajectory = history_trajectory.unsqueeze(0)
+        if high_command_one_hot.ndim == 1: high_command_one_hot = high_command_one_hot.unsqueeze(0)
+
+
+        if self.vlm is None:
+            raise RuntimeError("Agent is in 'no-cache' mode, but backbone is not initialized.")
+        image_path_tensor = features["image_path_tensor"]
+        if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
+        image_paths = self._decode_paths_from_tensor(image_path_tensor)
+        
+        pixel_values_list = [load_image(path) for path in image_paths]
+        
+        num_patches_list = [p.shape[0] for p in pixel_values_list]
+        pixel_values_cat = torch.cat(pixel_values_list, dim=0).cuda()
+        
+
+        navigation_commands = ['turn left', 'go straight', 'turn right']
+        command_indices = torch.argmax(high_command_one_hot, dim=-1)
+        command_str_list = [navigation_commands[idx.item()] for idx in command_indices]
+
+        questions = []
+        batch_size = high_command_one_hot.shape[0]
+        for i in range(batch_size):
+            history_trajectory_sample = history_trajectory[i]
+            command_str_sample = command_str_list[i]
+
+            history_str = ' '.join([
+                f'   - t-{3-j}: ({format_number(history_trajectory_sample[j, 0].item())}, '
+                f'{format_number(history_trajectory_sample[j, 1].item())}, '
+                f'{format_number(history_trajectory_sample[j, 2].item())})'
+                for j in range(history_trajectory_sample.shape[0])
+            ])
+            
+            prompt = (
+                "<image>\nAs an autonomous driving system, predict the vehicle's trajectory based on:\n"
+                "1. Visual perception from front camera view\n"
+                f"2. Historical motion context (last 4 timesteps):{history_str}\n"
+                f"3. Active navigation command: [{command_str_sample.upper()}]"
+            )
+            output_requirements = (
+                "\nOutput requirements:\n- Predict 8 future trajectory points\n"
+                "- Each point format: (x:float, y:float, heading:float)\n"
+                "- Use [PT, ...] to encapsulate the trajectory\n"
+                "- Maintain numerical precision to 2 decimal places"
+            )
+            questions.append(f"{prompt}{output_requirements}")
+
+        outputs = self.vlm(pixel_values_cat, questions, num_patches_list=num_patches_list)
+        last_hidden_state = outputs.hidden_states[-1]
+
+        status_feature = features["status_feature"].cuda()
+        if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
+        if last_hidden_state.ndim == 2: last_hidden_state = last_hidden_state.unsqueeze(0)
+
+        history_trajectory_reshaped = history_trajectory.view(history_trajectory.size(0), -1)
+        input_state = torch.cat([status_feature, history_trajectory_reshaped], dim=1)
+
+        action_inputs = BatchFeature({"state": input_state.to(model_dtype), "his_traj": history_trajectory_reshaped.to(model_dtype), "status_feature": status_feature.to(model_dtype)})
+        return self.action_head.get_action(last_hidden_state.to(model_dtype), action_inputs)
+
 
 
     @staticmethod
@@ -406,10 +472,16 @@ class NegDriveAgent(AbstractAgent):
         features = {k: v.unsqueeze(0) for k, v in features.items()}
 
         with torch.no_grad():
-            predictions = self.forward(features)
-            poses = predictions["pred_traj"].float().cpu().squeeze(0)
 
-        return Trajectory(poses)    # TODO Trajectory
+
+
+
+
+        # with torch.no_grad():
+        #     predictions = self.forward(features)
+        #     poses = predictions["pred_traj"].float().cpu().squeeze(0)
+
+        # return Trajectory(poses)    # TODO Trajectory
 
 
     def compute_trajectory_vis(self, agent_input: AgentInput) -> Trajectory:
