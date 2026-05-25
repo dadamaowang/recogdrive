@@ -151,10 +151,11 @@ def run_pdm_score(args: List[Dict[str, Union[List[str], DictConfig]]]) -> List[D
             requires_scene = False
             agent_input = scene_loader.get_agent_input_from_token(token)
             if requires_scene:
-                scene = scene_loader.get_scene_from_token(token)
-                trajectory = agent.compute_trajectory(agent_input, scene)
+                raise NotImplementedError
+                # scene = scene_loader.get_scene_from_token(token)
+                # trajectory = agent.compute_trajectory(agent_input, scene)
             else:
-                trajectory = agent.compute_trajectory(agent_input)
+                trajectory = agent.compute_trajectory_recogdrive(agent_input)
             pdm_result = pdm_score(
                 metric_cache=metric_cache,
                 model_trajectory=trajectory,

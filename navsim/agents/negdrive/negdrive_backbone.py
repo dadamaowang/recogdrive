@@ -127,11 +127,15 @@ class NegDriveBackbone(nn.Module):
             self._configure_internvl()
             self.num_image_token = 256
 
-
             # TODO resume training 的 
 
             if self.mode == "train":
                 self._set_internvl_finetune_mode()  
+
+                self.model.gradient_checkpointing_enable()
+                self._print_trainable_parameters()  
+                print(f"Backbone '{self.model_type}' loaded successfully on device '{self.device}'.")
+
             elif self.mode == "eval":
                 print("测试模式")
 
@@ -143,33 +147,14 @@ class NegDriveBackbone(nn.Module):
                         device_map=self.device
                     )
                     print(f"LoRA weights loaded from {vlm_lora_path}")
+                    self.model.language_model = self.model.language_model.to(self.device)
 
                 for param in self.model.parameters():
                     param.requires_grad = False
                 print("All model parameters frozen for eval mode.")
+
+
             
-
-        elif self.model_type == 'qwen':
-            raise NotImplementedError
-            # TODO qwen 也得 config
-            # self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            #     checkpoint_path,
-            #     torch_dtype=torch.bfloat16,
-            #     device_map=self.device,
-            #     trust_remote_code=True
-            # )
-            # self.tokenizer = AutoProcessor.from_pretrained(
-            #     checkpoint_path,
-            #     trust_remote_code=True
-            # )
-        else:
-            raise ValueError(f"Unsupported model_type: '{self.model_type}'. Please choose 'internvl' or 'qwen'.")
-
-        self.model.gradient_checkpointing_enable()
-        self._print_trainable_parameters()  
-        print(f"Backbone '{self.model_type}' loaded successfully on device '{self.device}'.")
-
-
     def _configure_internvl(self):
         """Applies specific configurations required for the InternVL model."""
         self.model.system_message = system_message
