@@ -6,8 +6,8 @@
 @Version :   0.0.1
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :    GPU DEBUG
-@Desc    :   None
+@Status  :   runnable, developing, draft finished 
+@Desc    :   按照代码执行顺序，【正在优化】tag 处整合
 '''
 
 from typing import Tuple, List, Dict, Any 
@@ -39,6 +39,7 @@ CONFIG_PATH = "config/training"
 CONFIG_NAME = "default_training"   
 
 
+torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision('high')  
 torch.cuda.set_per_process_memory_fraction(0.95, 0) 
 
@@ -155,6 +156,9 @@ def main(cfg: DictConfig) -> None:
     Main entrypoint for training NegDrive Agent 
     :param cfg: omegaconf dictionary
     """
+
+    # 【正在优化】
+
     local_rank = int(os.getenv('LOCAL_RANK', 0))
     world_size = int(os.getenv('WORLD_SIZE', 1))
     rank = int(os.getenv('RANK', 0))
@@ -208,6 +212,7 @@ def main(cfg: DictConfig) -> None:
             default_hp_metric=True,      
             ), 
         log_every_n_steps=1, 
+        val_check_interval=200,
         callbacks=[
             VRAMMonitor(), 
             LearningRateMonitor(logging_interval="step"),
