@@ -10,7 +10,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 
 TRAIN_TEST_SPLIT=navtest
-EXP_NAME=debug_test_load_lora
+EXP_NAME=test_recogdrive_8b_ori
 
 
 export MASTER_PORT=63669
@@ -31,7 +31,7 @@ export MASTER_PORT=${MASTER_PORT}
 export PORT=${PORT}
 
 echo "GPUS: ${GPUS}"
-export CUDA_LAUNCH_BLOCKING=1
+# export CUDA_LAUNCH_BLOCKING=1 open only when debug
 
 # export HYDRA_FULL_ERROR=1
 
@@ -47,11 +47,10 @@ torchrun \
     agent.metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache/" \
     cache_path=null \
     force_cache_computation=false \
-    agent.vlm_path="/UserData/xnq/my_models/Policy/ReCogDrive-VLM-2B" \
+    agent.vlm_path="/UserData/xnq/my_models/Policy/ReCogDrive-VLM-8B" \
     agent.mode="eval" \
-    agent.vlm_lora_path="/UserData/xnq/navsim_workspace/exp/debug_ckpt_check/2026.05.21.16.55.00/tb/debug_ckpt_check/checkpoints/last_lora" \
     agent.vlm_size="small" \
-    agent.diff_path="/UserData/xnq/my_models/Planner/ReCogDrive-2B-RL/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
+    agent.diff_path="/UserData/xnq/my_models/Planner/ReCogDrive-8B-RL/ReCogDrive_Diffusion_Planner_8B_RL.ckpt"  \
     agent.per_sample_rollout=4 \
     agent.bag_g=4 \
     agent.max_text_tokens=128 \
