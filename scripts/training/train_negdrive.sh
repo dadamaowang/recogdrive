@@ -1,4 +1,8 @@
 
+source ~/.bashrc
+conda activate nd
+which python
+
 nvidia-smi
 
 export NAVSIM_EXP_ROOT="/UserData/xnq/navsim_workspace/exp"    
