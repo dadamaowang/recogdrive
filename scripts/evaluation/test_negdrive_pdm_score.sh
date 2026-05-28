@@ -1,6 +1,6 @@
 
-# source ~/.bashrc
-# conda activate nd
+source ~/.bashrc
+conda activate nd
 which python
 
 nvidia-smi
