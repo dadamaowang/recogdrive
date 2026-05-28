@@ -15,7 +15,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 
 TRAIN_TEST_SPLIT=navtest
-EXP_NAME=test_recogdrive_2b_ori
+EXP_NAME=debug_8b_test_ori_02
 
 
 export MASTER_PORT=63669
@@ -52,10 +52,10 @@ torchrun \
     agent.metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache/" \
     cache_path=null \
     force_cache_computation=false \
-    agent.vlm_path="/UserData/xnq/recog_ori_models/ReCogDrive_VLM_2B" \
+    agent.vlm_path="/UserData/xnq/recog_ori_models/ReCogDrive_VLM_8B" \
     agent.mode="eval" \
-    agent.vlm_size="small" \
-    agent.diff_path="/UserData/xnq/recog_ori_models/Diffusion_Planner_2B/Diffusion_Planner_For_2B.ckpt"  \
+    agent.vlm_size="large" \
+    agent.diff_path="/UserData/xnq/recog_ori_models/Diffusion_Planner_8B/Diffusion_Planner_For_8B.ckpt"  \
     agent.dit_type="small" \
     agent.per_sample_rollout=4 \
     agent.bag_g=4 \
