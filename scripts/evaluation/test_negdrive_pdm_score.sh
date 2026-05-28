@@ -1,8 +1,6 @@
 
-
-
-source ~/.bashrc
-conda activate nd
+# source ~/.bashrc
+# conda activate nd
 which python
 
 nvidia-smi
@@ -38,7 +36,7 @@ export MASTER_PORT=${MASTER_PORT}
 export PORT=${PORT}
 
 echo "GPUS: ${GPUS}"
-# export CUDA_LAUNCH_BLOCKING=1 open only when debug
+# export CUDA_LAUNCH_BLOCKING=1 # open only when debug
 
 # export HYDRA_FULL_ERROR=1
 
@@ -54,10 +52,11 @@ torchrun \
     agent.metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache/" \
     cache_path=null \
     force_cache_computation=false \
-    agent.vlm_path="/UserData/xnq/my_models/Policy/ReCogDrive-VLM-2B" \
+    agent.vlm_path="/UserData/xnq/recog_ori_models/ReCogDrive_VLM_2B" \
     agent.mode="eval" \
     agent.vlm_size="small" \
-    agent.diff_path="/UserData/xnq/my_models/Planner/ReCogDrive-8B-RL/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
+    agent.diff_path="/UserData/xnq/recog_ori_models/Diffusion_Planner_2B/Diffusion_Planner_For_2B.ckpt"  \
+    agent.dit_type="small" \
     agent.per_sample_rollout=4 \
     agent.bag_g=4 \
     agent.max_text_tokens=128 \

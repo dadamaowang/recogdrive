@@ -39,12 +39,6 @@ from .negdrive_actionhead import NegDriveDiffusionPlannerConfig, NegDriveDiffusi
 
 
 
-
-
-
-
-
-
 class NegDriveAgent(AbstractAgent):
 
     def __init__(   
@@ -95,6 +89,21 @@ class NegDriveAgent(AbstractAgent):
         self._trajectory_sampling = trajectory_sampling     
         self.metric_cache_path = metric_cache_path
         self.device = device or f"cuda:{int(os.getenv('LOCAL_RANK', 0))}"
+
+
+        """NOTE VLM + Diffusion Planner 创建逻辑
+        (1) dit_type : 最主要区别是 input_dim, output_dim 
+            small : input_embedding_dim = 384
+            large : input_embedding_dim = 1536
+        
+            dit_type 跟 vlm_size 是解耦的; 但是最好 2B 和 8B 分别对应
+
+        (2) vlm_size: 
+            small: hidden_embedding_dim = 1536 
+            large: hidden_embedding_dim = 3584
+        
+        大的小的主要就是隐空间的 dim 
+        """
 
         # -----------------------
         # VLM (policy network)
