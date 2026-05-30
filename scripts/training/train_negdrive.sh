@@ -15,23 +15,23 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=debug_0527
-FAST_DEV_RUN=false
+EXP_NAME=debug_0530_token_embed
+FAST_DEV_RUN=true
 
-export MASTER_PORT=63669
-export PORT=63665
-export GPUS=2
-export GPUS_PER_NODE=$GPUS
+
+
+MASTER_PORT=63669
+PORT=63665
+GPUS=2
 
 MASTER_PORT=${MASTER_PORT:-63669}
 PORT=${PORT:-63665}
-GPUS=${GPUS:-8}
-GPUS_PER_NODE=${GPUS_PER_NODE:-8}
-NODES=$((GPUS / GPUS_PER_NODE))
+export GPUS=${GPUS:-8}
+export GPUS_PER_NODE=${GPUS_PER_NODE:-8}
 export MASTER_PORT=${MASTER_PORT}
 export PORT=${PORT}
 
-echo "GPUS: ${GPUS}"
+
 
 
 torchrun \
@@ -52,11 +52,12 @@ torchrun \
     trainer.params.strategy="ddp_find_unused_parameters_false" \
     trainer.params.limit_train_batches=0.1 \
     trainer.params.limit_val_batches=0.1 \
+    trainer.params.val_check_interval=200 \
     trainer.params.precision=bf16-mixed \
     agent.metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache_train" \
-    agent.vlm_path="/UserData/xnq/recog_ori_models/ReCogDrive_VLM_2B" \
-    agent.vlm_size="small" \
-    agent.diff_path="/UserData/xnq/recog_ori_models/Diffusion_Planner_2B/Diffusion_Planner_For_2B.ckpt"  \
+    agent.vlm_path="/UserData/xnq/recog_ori_models/ReCogDrive_VLM_8B" \
+    agent.vlm_size="large" \
+    agent.diff_path="/UserData/xnq/recog_ori_models/Diffusion_Planner_8B/Diffusion_Planner_For_8B.ckpt"  \
     agent.dit_type="small" \
     agent.per_sample_rollout=4 \
     agent.bag_g=4 \

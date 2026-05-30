@@ -299,6 +299,7 @@ def compute_response_logprobs_tokens(
         image_flags=image_flags,
         output_hidden_states=False,
         return_dict=True,
+        use_cache=False,    # 不需要自回归生成，关掉，节省显存
     )
     logits = outputs.logits     # [B, S, V]
 

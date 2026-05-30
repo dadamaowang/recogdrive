@@ -508,6 +508,38 @@ class NegDriveAgent(AbstractAgent):
         return Trajectory(poses)    
 
 
+    def compute_trajectory_recogdrive_without_prompt(self, 
+                                                    agent_input: AgentInput  # TODO AgentInput
+                                                     ) -> Trajectory:
+        self.eval()
+
+        features: Dict[str, torch.Tensor] = {}
+        # build features
+        for builder in self.get_feature_builders():    # TODO get_feature_builders()
+            features.update(builder.compute_features(agent_input))
+        # add batch dimension
+        features = {k: v.unsqueeze(0) for k, v in features.items()}
+
+        with torch.no_grad():
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                pixel_values_cat, questions, num_patches_list, history_trajectory = self.unpack_features(features)
+                diff_dtype, diff_input = self.get_diff_input(features, history_trajectory)
+
+                outputs = self.vlm(pixel_values_cat, questions, num_patches_list=num_patches_list)
+                last_hidden_state = outputs.hidden_states[-1]
+
+                status_feature = features["status_feature"].cuda()
+                if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
+                if last_hidden_state.ndim == 2: last_hidden_state = last_hidden_state.unsqueeze(0)
+
+            predictions = self.action_head.get_action(last_hidden_state.to(diff_dtype), diff_input)
+
+            poses = predictions["pred_traj"].float().cpu().squeeze(0)
+        
+        return Trajectory(poses)    
+
+
+
     def unpack_features(self, features: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, List[str], List[int]]:
         """
         Unpack and prepare features for the VLM.

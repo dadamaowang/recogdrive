@@ -35,6 +35,14 @@ from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL,
 
 logger = logging.getLogger(__name__)
 
+
+class RankZeroFilter(logging.Filter):
+    def filter(self, record):
+        # 未初始化分布式（单卡/调试）或 rank==0 时允许打印
+        return not dist.is_initialized() or dist.get_rank() == 0
+logger.addFilter(RankZeroFilter())
+
+
 CONFIG_PATH = "config/training"
 CONFIG_NAME = "default_training"   
 
@@ -157,18 +165,16 @@ def main(cfg: DictConfig) -> None:
     :param cfg: omegaconf dictionary
     """
 
-    # 【正在优化】
-
     local_rank = int(os.getenv('LOCAL_RANK', 0))
-    world_size = int(os.getenv('WORLD_SIZE', 1))
+    world_size = int(os.getenv('WORLD_SIZE', 1))    
     rank = int(os.getenv('RANK', 0))
-
-    dist.init_process_group(
-        backend='nccl',
-        world_size=world_size,
-        rank=rank,
-    )
+    dist.init_process_group(backend='nccl')
     torch.cuda.set_device(local_rank)
+
+
+
+
+    # 【正在优化】
     pl.seed_everything(cfg.seed, workers=True)
     logger.info(f"Global Seed set to {cfg.seed}")
 
@@ -212,7 +218,6 @@ def main(cfg: DictConfig) -> None:
             default_hp_metric=True,      
             ), 
         log_every_n_steps=1, 
-        val_check_interval=200,
         callbacks=[
             VRAMMonitor(), 
             LearningRateMonitor(logging_interval="step"),
