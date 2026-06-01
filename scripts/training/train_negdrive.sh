@@ -15,7 +15,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=debug_0530_token_embed
+EXP_NAME=debug_0601_gc
 FAST_DEV_RUN=true
 
 

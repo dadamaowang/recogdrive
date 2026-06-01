@@ -168,10 +168,12 @@ def main(cfg: DictConfig) -> None:
     local_rank = int(os.getenv('LOCAL_RANK', 0))
     world_size = int(os.getenv('WORLD_SIZE', 1))    
     rank = int(os.getenv('RANK', 0))
+
+    # Only print logs from the main process.
+    if rank != 0:
+        logger.disabled = True
     dist.init_process_group(backend='nccl')
     torch.cuda.set_device(local_rank)
-
-
 
 
     # 【正在优化】

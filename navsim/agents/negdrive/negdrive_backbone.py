@@ -129,11 +129,25 @@ class NegDriveBackbone(nn.Module):
 
             # TODO resume training 的 
 
+            # 开启 GC (需要在 peft wrap 之前)
+            if hasattr(self.model, "gradient_checkpointing_enable"):
+                self.model.gradient_checkpointing_enable()
+                print("Gradient checkpointing enabled for InternVL.")
+            
+            if hasattr(self.model.vision_model, "gradient_checkpointing_enable"):
+                self.model.vision_model.gradient_checkpointing_enable()
+                print("Gradient checkpointing enabled for InternVL vision model.")  
+
             if self.mode == "train":
                 self._set_internvl_finetune_mode()  
+                
+                # apply LoRA to language model
+                self._apply_lora_to_language_model(r=16,
+                                                lora_alpha=32,
+                                                lora_dropout=0.05)
 
-                self.model.gradient_checkpointing_enable()
-                self._print_trainable_parameters()  
+                self._print_trainable_parameters()
+
                 print(f"Backbone '{self.model_type}' loaded successfully on device '{self.device}'.")
 
             elif self.mode == "eval":
@@ -180,11 +194,6 @@ class NegDriveBackbone(nn.Module):
             param.requires_grad = False 
         print("MLP PROJECTOR FROZEN")
     
-        # apply LoRA to language model
-        self._apply_lora_to_language_model(r=16,
-                                           lora_alpha=32,
-                                           lora_dropout=0.05)
-
 
     def _apply_lora_to_language_model(self,
                     r: int,

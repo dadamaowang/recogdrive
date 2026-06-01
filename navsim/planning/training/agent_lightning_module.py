@@ -292,16 +292,30 @@ def compute_response_logprobs_tokens(
     num_patches = pixel_values.shape[0]
     image_flags = torch.ones(num_patches, dtype=torch.long, device=device)
 
+    
+    memo = get_realtime_vram()
+    print(f"【Logprob Memory Check】：before outputs: {memo} ")
+
     outputs = model(
         pixel_values=pixel_values,
         input_ids=full_ids,
         attention_mask=attention_mask,
         image_flags=image_flags,
         output_hidden_states=False,
+        output_attentions=False,
         return_dict=True,
         use_cache=False,    # 不需要自回归生成，关掉，节省显存
     )
+
+    memo = get_realtime_vram()
+    print(f"【Logprob Memory Check】：After outputs, before logits: {memo} ")
+
+
     logits = outputs.logits     # [B, S, V]
+
+    memo = get_realtime_vram()
+    print(f"【Logprob Memory Check】：After logits, before cross entropy: {memo} ")
+
 
     # Causal shift
     shift_logits = logits[:, :-1, :]        # [B, S-1, V]
@@ -325,6 +339,9 @@ def compute_response_logprobs_tokens(
         target=response_ids.reshape(-1),
         reduction='none'
     ).reshape(response_logits.shape[:-1])  # [B, L_resp]
+
+    memo = get_realtime_vram()
+    print(f"【Logprob Memory Check】：After cross entropy: {memo} ")
 
     eos_mask = response_mask.float()
     token_log_probs = token_log_probs * eos_mask
@@ -484,6 +501,13 @@ class AgentLightningVLMRL(pl.LightningModule):
         :param batch_idx: index of batch (ignored)
         :return: scalar loss
         """
+
+        print("=" * 50)
+        print("GC检查：")
+        for name, module in self.agent.vlm.model.named_modules():
+            if hasattr(module, "gradient_checkpointing"):
+                print(name, module.gradient_checkpointing)
+        print("=" * 50)
 
         opt = self.optimizers()
         sch = self.lr_schedulers()
