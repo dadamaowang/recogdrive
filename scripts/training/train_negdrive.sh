@@ -1,4 +1,7 @@
 
+# NOTEICE
+# 1. 搜 UserData 改一下 metric path 加载的路径
+
 source ~/.bashrc
 conda activate nd
 which python
@@ -15,13 +18,13 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=d01_exp_0603_2b_train_v1
+EXP_NAME=d04_exp_0603_2b_train_v1
 FAST_DEV_RUN=false
 
 
 MASTER_PORT=63669
 PORT=63665
-GPUS=2
+GPUS=4
 
 MASTER_PORT=${MASTER_PORT:-63669}
 PORT=${PORT:-63665}
@@ -30,6 +33,7 @@ export GPUS_PER_NODE=${GPUS_PER_NODE:-8}
 export MASTER_PORT=${MASTER_PORT}
 export PORT=${PORT}
 
+# HYDRA_FULL_ERROR=1
 
 torchrun \
     --nnodes=1 \
@@ -41,15 +45,15 @@ torchrun \
     cache_path=null \
     force_cache_computation=false \
     seed=42 \
-    dataloader.params.batch_size=32 \
+    dataloader.params.batch_size=16 \
     dataloader.params.num_workers=8 \
     trainer.params.fast_dev_run=${FAST_DEV_RUN} \
     trainer.params.max_epochs=4 \
     trainer.params.devices=${GPUS} \
     trainer.params.strategy="ddp_find_unused_parameters_false" \
-    trainer.params.limit_train_batches=0.1 \
-    trainer.params.limit_val_batches=0.1 \
-    trainer.params.val_check_interval=200 \
+    trainer.params.limit_train_batches=0.3 \
+    trainer.params.limit_val_batches=0.3 \
+    trainer.params.val_check_interval=50 \
     trainer.params.precision=bf16-mixed \
     agent.metric_cache_path="/root/navsim_workspace/exp/metric_cache_train" \
     agent.vlm_path="/root/navsim_workspace/models/ReCogDrive-VLM-2B" \

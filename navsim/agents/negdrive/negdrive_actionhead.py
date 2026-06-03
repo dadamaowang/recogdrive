@@ -683,7 +683,7 @@ class NegDriveDiffusionPlanner(nn.Module):
         for token in unique_tokens:
             path = self.metric_cache_loader.metric_cache_paths[token]
             
-            path = '/UserData' + path # TODO 
+            path = '/UserData/workshops/workshop-73d2bbfd-8e93-4c66-805c-d5ec14c7c431' + path # TODO 
 
             with lzma.open(path, 'rb') as f:
                 metric_cache[token] = pickle.load(f)

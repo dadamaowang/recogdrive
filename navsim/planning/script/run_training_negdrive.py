@@ -225,7 +225,7 @@ def main(cfg: DictConfig) -> None:
             LearningRateMonitor(logging_interval="step"),
             OptimizerHealthMonitor(),
             ModelCheckpoint(monitor="val/best_of_g_reward", mode="max", 
-                            save_top_k=3, every_n_train_steps=1, 
+                            save_top_k=3, every_n_train_steps=100, 
                             filename="best_g_reward-{step:08d}-{val/best_of_g_reward:.4f}",
                             save_last=True,),
                             
