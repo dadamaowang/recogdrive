@@ -15,13 +15,13 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=d_exp_0603_2b_train_v1
+EXP_NAME=d01_exp_0603_2b_train_v1
 FAST_DEV_RUN=false
 
 
 MASTER_PORT=63669
 PORT=63665
-GPUS=4
+GPUS=2
 
 MASTER_PORT=${MASTER_PORT:-63669}
 PORT=${PORT:-63665}
