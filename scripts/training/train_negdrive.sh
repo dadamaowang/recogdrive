@@ -5,24 +5,23 @@ which python
 
 nvidia-smi
 
-export NAVSIM_EXP_ROOT="/UserData/xnq/navsim_workspace/exp"    
+export NAVSIM_EXP_ROOT="/root/navsim_workspace/exp"    
 
 export NAVSIM_DEVKIT_ROOT="/root/recogdrive"
-export OPENSCENE_DATA_ROOT="/UserData/xnq/navsim_workspace/dataset"
+export OPENSCENE_DATA_ROOT="/root/navsim_workspace/dataset"
 export NUPLAN_MAPS_ROOT="$OPENSCENE_DATA_ROOT/maps"
 export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=debug_0601_gc
-FAST_DEV_RUN=true
-
+EXP_NAME=d_exp_0603_2b_train_v1
+FAST_DEV_RUN=false
 
 
 MASTER_PORT=63669
 PORT=63665
-GPUS=2
+GPUS=4
 
 MASTER_PORT=${MASTER_PORT:-63669}
 PORT=${PORT:-63665}
@@ -30,8 +29,6 @@ export GPUS=${GPUS:-8}
 export GPUS_PER_NODE=${GPUS_PER_NODE:-8}
 export MASTER_PORT=${MASTER_PORT}
 export PORT=${PORT}
-
-
 
 
 torchrun \
@@ -44,23 +41,23 @@ torchrun \
     cache_path=null \
     force_cache_computation=false \
     seed=42 \
-    dataloader.params.batch_size=4 \
+    dataloader.params.batch_size=32 \
     dataloader.params.num_workers=8 \
     trainer.params.fast_dev_run=${FAST_DEV_RUN} \
-    trainer.params.max_epochs=10 \
+    trainer.params.max_epochs=4 \
     trainer.params.devices=${GPUS} \
     trainer.params.strategy="ddp_find_unused_parameters_false" \
     trainer.params.limit_train_batches=0.1 \
     trainer.params.limit_val_batches=0.1 \
     trainer.params.val_check_interval=200 \
     trainer.params.precision=bf16-mixed \
-    agent.metric_cache_path="/UserData/rcd/navsim_workspace/exp/metric_cache_train" \
-    agent.vlm_path="/UserData/xnq/recog_ori_models/ReCogDrive_VLM_8B" \
-    agent.vlm_size="large" \
-    agent.diff_path="/UserData/xnq/recog_ori_models/Diffusion_Planner_8B/Diffusion_Planner_For_8B.ckpt"  \
+    agent.metric_cache_path="/root/navsim_workspace/exp/metric_cache_train" \
+    agent.vlm_path="/root/navsim_workspace/models/ReCogDrive-VLM-2B" \
+    agent.vlm_size="small" \
+    agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
     agent.dit_type="small" \
     agent.per_sample_rollout=4 \
-    agent.bag_g=4 \
+    agent.bag_g=2 \
     agent.max_text_tokens=128 \
     agent.max_padding_len=2800 \
     agent.vlm_lr=1e-5 \
