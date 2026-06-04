@@ -10,7 +10,7 @@ which python
 
 nvidia-smi
 
-export NAVSIM_EXP_ROOT="/root/navsim_workspace/exp"    
+export NAVSIM_EXP_ROOT="/root/navsim_workspace/exps"    
 
 export NAVSIM_DEVKIT_ROOT="/root/recogdrive"
 export OPENSCENE_DATA_ROOT="/root/navsim_workspace/dataset"
@@ -20,7 +20,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=0604_2b_negdrive_train_v1
+EXP_NAME=0605_2b_negdrive_train_v1
 FAST_DEV_RUN=false
 
 MASTER_PORT=63669

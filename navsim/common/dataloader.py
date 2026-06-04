@@ -193,11 +193,39 @@ class MetricCacheLoader:
         :param cache_path: directory of cache folder
         :return: dictionary of token and file path
         """
+
         metadata_dir = cache_path / "metadata"
         metadata_file = [file for file in metadata_dir.iterdir() if ".csv" in str(file)][0]
+
+        metadata_file = Path(metadata_file).resolve()
+
         with open(str(metadata_file), "r") as f:
             cache_paths = f.read().splitlines()[1:]
-        metric_cache_dict = {cache_path.split("/")[-2]: cache_path for cache_path in cache_paths}
+        
+
+        mf_str = str(metadata_file)
+
+        tag = "metric_cache_train" if "metric_cache_train" in mf_str else "metric_cache"
+
+        metric_cache_idx = mf_str.find(tag)
+        if metric_cache_idx == -1:
+            raise ValueError(f"Metadata file name {metadata_file} does not contain 'metric_cache_train' or 'metric_cache' as expected.")
+        prefix_path = mf_str[:metric_cache_idx] 
+        
+        metric_cache_dict = {}
+        for cp in cache_paths:
+            cidx = cp.find(tag)
+            if cidx == -1:
+                raise ValueError(f"Cache path {cp} does not contain '{tag}' as expected.")
+            
+            relative_path = cp[cidx:]
+            new_full_path = prefix_path + relative_path
+            metric_cache_dict[relative_path.split("/")[-2]] = new_full_path
+        
+        k, v = next(iter(metric_cache_dict.items()))
+        print(f"Example token: {k}, Example cache path: {v}")
+        
+
         return metric_cache_dict
 
     @property
@@ -218,6 +246,10 @@ class MetricCacheLoader:
         :param idx: index of cache to cache to load
         :return: metric cache dataclass
         """
+        # metric_cache = self.get_from_token(self.tokens[idx])
+
+        # metric_cache.file_path = Path(metric_cache.file_path).resolve()
+
         return self.get_from_token(self.tokens[idx])
 
     def get_from_token(self, token: str) -> MetricCache:
