@@ -145,7 +145,7 @@ def run_pdm_score(args: List[Dict[str, Union[List[str], DictConfig]]]) -> List[D
         try:
             metric_cache_path = metric_cache_loader.metric_cache_paths[token]
 
-            metric_cache_path = "/UserData/workshops/workshop-73d2bbfd-8e93-4c66-805c-d5ec14c7c431/" + metric_cache_path
+            # metric_cache_path = "/UserData/workshops/workshop-73d2bbfd-8e93-4c66-805c-d5ec14c7c431/" + metric_cache_path
             
             with lzma.open(metric_cache_path, "rb") as f:
                 metric_cache: MetricCache = pickle.load(f)

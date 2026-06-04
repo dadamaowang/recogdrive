@@ -1,6 +1,8 @@
 
 # NOTEICE
 # 1. 搜 UserData 改一下 metric path 加载的路径
+# 2. default_training 里超参都检查一下
+
 
 source ~/.bashrc
 conda activate nd
@@ -18,7 +20,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=2b_negdrive_train
+EXP_NAME=0604_2b_negdrive_train_v1
 FAST_DEV_RUN=false
 
 MASTER_PORT=63669

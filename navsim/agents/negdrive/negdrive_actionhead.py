@@ -681,9 +681,16 @@ class NegDriveDiffusionPlanner(nn.Module):
         unique_tokens = set(tokens_list)
         metric_cache = {}
         for token in unique_tokens:
+            # print("路径检查 1：")
+            # print(path)
+            # print(type(path))
+
             path = self.metric_cache_loader.metric_cache_paths[token]
             
-            path = '/UserData/workshops/workshop-73d2bbfd-8e93-4c66-805c-d5ec14c7c431' + path # TODO 
+            # p = '/UserData/workshops/workshop-73d2bbfd-8e93-4c66-805c-d5ec14c7c431/' + path[6:] # TODO 
+
+            # print("路径检查 2：")
+            # print(p)
 
             with lzma.open(path, 'rb') as f:
                 metric_cache[token] = pickle.load(f)
@@ -694,7 +701,6 @@ class NegDriveDiffusionPlanner(nn.Module):
                                  cache_dict=metric_cache)
 
         return rewards
-
 
 
     def _check_mask_ratio(self, attention_mask: torch.Tensor):

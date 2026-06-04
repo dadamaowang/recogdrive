@@ -11,6 +11,8 @@ import lzma
 from navsim.common.dataclasses import AgentInput, Scene, SceneFilter, SensorConfig
 from navsim.planning.metric_caching.metric_cache import MetricCache
 
+import sys
+
 
 def filter_scenes(data_path: Path, scene_filter: SceneFilter) -> Dict[str, List[Dict[str, Any]]]:
     """
@@ -178,8 +180,11 @@ class MetricCacheLoader:
         :param cache_path: directory of cache folder
         :param file_name: file name of cached files, defaults to "metric_cache.pkl"
         """
-
         self._file_name = file_name
+
+        # Resolve the provided cache_path in case it's a symbolic link so
+        # we operate on the origin absolute path.
+        cache_path = Path(cache_path).resolve()
         self.metric_cache_paths = self._load_metric_cache_paths(cache_path)
 
     def _load_metric_cache_paths(self, cache_path: Path) -> Dict[str, Path]:
