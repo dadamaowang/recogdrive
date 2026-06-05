@@ -45,6 +45,7 @@ from navsim.planning.metric_caching.metric_cache import MetricCache
 logger = logging.getLogger(__name__)
 
 
+
 CONFIG_PATH = "config/pdm_scoring"
 CONFIG_NAME = "default_run_pdm_score"
 
@@ -189,15 +190,13 @@ def main(cfg: DictConfig) -> None:
     rank = int(os.getenv('RANK', 0))
     dist.init_process_group(
         backend='nccl',
-        world_size=world_size,
-        rank=rank,
     )
     
     torch.cuda.set_device(local_rank)
     device = torch.device(f'cuda:{local_rank}')
 
     build_logger(cfg)
-    worker = build_worker(cfg)
+    # worker = build_worker(cfg)
 
     scene_loader = SceneLoader(
         sensor_blobs_path=None,

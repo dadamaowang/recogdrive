@@ -15,7 +15,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 
 TRAIN_TEST_SPLIT=navtest
-EXP_NAME=d_test_0605_2b
+EXP_NAME=d02_test_0605_2b
 
 
 export MASTER_PORT=63669

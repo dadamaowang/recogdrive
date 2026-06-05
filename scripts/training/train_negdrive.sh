@@ -1,6 +1,6 @@
 
 # NOTEICE
-# 1. 搜 UserData 改一下 metric path 加载的路径
+# 1. metric_cache 路径检查
 # 2. default_training 里超参都检查一下
 
 
@@ -20,7 +20,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=0605_2b_negdrive_train_v1
+EXP_NAME=0606_2b_negdrive_train_v1
 FAST_DEV_RUN=false
 
 MASTER_PORT=63669
@@ -49,12 +49,14 @@ torchrun \
     dataloader.params.batch_size=16 \
     dataloader.params.num_workers=8 \
     trainer.params.fast_dev_run=${FAST_DEV_RUN} \
-    trainer.params.max_epochs=4 \
+    trainer.params.limit_train_batches=1.0 \
+    trainer.params.limit_val_batches=1.0 \
+    trainer.params.max_epochs=5 \
     trainer.params.devices=${GPUS} \
     trainer.params.strategy="ddp_find_unused_parameters_false" \
-    trainer.params.val_check_interval=50 \
+    trainer.params.val_check_interval=20 \
     trainer.params.precision=bf16-mixed \
-    agent.metric_cache_path="/root/navsim_workspace/exp/metric_cache_train" \
+    agent.metric_cache_path="/root/navsim_workspace/exps/metric_cache_train" \
     agent.vlm_path="/root/navsim_workspace/models/ReCogDrive-VLM-2B" \
     agent.vlm_size="small" \
     agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
@@ -66,7 +68,6 @@ torchrun \
     agent.vlm_lr=1e-5 \
     agent.opt_weight_decay=0.01 \
     agent.opt_eps=1e-8 \
-    # trainer.params.limit_train_batches=0.3 \
-    # trainer.params.limit_val_batches=0.3 \
+
 
 

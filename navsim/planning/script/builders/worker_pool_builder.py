@@ -19,7 +19,7 @@ def build_worker(cfg: DictConfig) -> WorkerPool:
     """
     logger.info('Building WorkerPool...')
     worker: WorkerPool = (
-        instantiate(cfg.worker)
+        instantiate(cfg.worker) # worker default is : ray_distributed_no_torch
         if (
             is_target_type(cfg.worker, SingleMachineParallelExecutor)
             or is_target_type(cfg.worker, Sequential)
