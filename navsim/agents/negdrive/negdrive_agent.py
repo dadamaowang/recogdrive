@@ -182,20 +182,12 @@ class NegDriveAgent(AbstractAgent):
         else:
             raise NotImplementedError
 
+
+        # -----------------------
+        # Load Model Final Check
+        # -----------------------        
         self._verify_model_dtype(self.vlm, "VLM")
         self._verify_model_dtype(self.action_head, "Diffusion Planner")
-
-
-        # 🔑 追加以下自检逻辑（打印各子模块加载状态）
-        print(f"✅ Diffusion planner loaded: {len(cleaned_state_dict) - len(real_unexpected)} keys matched")
-        print(f"🔍 核心子模块加载验证:")
-        for name, module in self.action_head.named_children():
-            # 统计该模块在 checkpoint 中命中的参数数量
-            matched_keys = sum(1 for k in cleaned_state_dict if k.startswith(f"{name}."))
-            total_params = sum(1 for _ in module.named_parameters())
-            status = "✅ 已加载" if matched_keys == total_params else "⚠️ 部分/未加载"
-            print(f"   {name}: {status} ({matched_keys}/{total_params} keys)")
-
 
 
         # -----------------------
@@ -212,8 +204,7 @@ class NegDriveAgent(AbstractAgent):
         self.opt_weight_decay = opt_weight_decay
         self.opt_eps = opt_eps
 
-        self.total_training_steps = None   # to be set by lightning module at runtime
-
+        self.total_training_steps = None   # set by lightning module at runtime
 
 
         # self.reward_scale = reward_scale
@@ -229,17 +220,18 @@ class NegDriveAgent(AbstractAgent):
 
 
     def initialize(self) -> None:
-        """for hydra to initialize, no use."""
+        """for hydra to initialize, no use. 【D】"""
         pass
-    
+
 
     def name(self) -> str:
+        """【D】"""
         return self.__class__.__name__
+    
 
     def set_total_training_steps(self, total_steps: int):
         self.total_training_steps = total_steps
         print(f"Total training steps {total_steps}")
-
 
 
     def _verify_model_dtype(
@@ -348,7 +340,7 @@ class NegDriveAgent(AbstractAgent):
         if len(suspicious_params) == 0:
             print("✅ No suspicious trainable fp32 params found.")
         else:
-            print("❌ Found suspicious trainable fp32 params!")
+            raise RuntimeError("Found suspicious trainable fp32 params!")
 
         return suspicious_params
 
@@ -729,7 +721,7 @@ def decode_paths_from_tensor(path_tensor: torch.Tensor) -> List[str]:
 
 
 
-def make_diffusion_planner_config(  # TODO change hyper
+def make_diffusion_planner_config(  
     size: str,
     *,
     action_dim: int,

@@ -6,8 +6,8 @@
 @Version :   0.0.1
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   draft work. 完善中
-@Desc    :   【DOING tag 是目前最重点的】
+@Status  :   正在优化
+@Desc    :   
 '''
 
 import pytorch_lightning as pl
@@ -462,15 +462,17 @@ class AgentLightningVLMRL(pl.LightningModule):
     """Pytorch lightning wrapper for negdrive agent."""
 
     def __init__(self, agent: AbstractAgent, cfg: DictConfig = None):
-        """
-        Initialise the lightning module wrapper.
-        :param agent: agent interface in NAVSIM
+        """【正在优化】
         """
         super().__init__()
 
         # self.save_hyperparameters(cfg)    # TODO tensorborad 超参这里出问题；后边再解决不是特别重要
 
         self.agent = agent
+
+        # ------------------------------
+        # Set RLVR-related Hyparameters
+        # ------------------------------ 
         self.max_gen_text_tokens = agent.max_text_tokens
         self.G = agent.per_sample_rollout
         self.bag_g = agent.bag_g
