@@ -59,6 +59,9 @@ class NegDriveAgent(AbstractAgent):
         opt_type: str = "AdamW",
         opt_weight_decay: float = 0.01,
         opt_eps: float = 1e-8,
+        lora_r: int = 16,
+        lora_alpha: int = 32,
+        lora_dropout: float = 0.05,
 
         # ========== DIFFUSION (DECODER) ==========
         dit_type: str = "small",
@@ -113,12 +116,19 @@ class NegDriveAgent(AbstractAgent):
 
         self.max_padding_len = max_padding_len
 
+        self.lora_r = lora_r
+        self.lora_alpha = lora_alpha
+        self.lora_dropout = lora_dropout
+
         self.vlm = NegDriveBackbone(    
             model_type=self.vlm_type,
             checkpoint_path=self.vlm_path,
             vlm_lora_path=self.vlm_lora_path,
             device=self.device,
             max_padding_len=self.max_padding_len,
+            lora_r=self.lora_r,
+            lora_alpha=self.lora_alpha,
+            lora_dropout=self.lora_dropout,
             mode=mode,
         )
         self.vlm = self.vlm.to(self.device)
@@ -218,6 +228,11 @@ class NegDriveAgent(AbstractAgent):
         # self.inference_selection_mode = "median"
 
 
+    def initialize(self) -> None:
+        """for hydra to initialize, no use."""
+        pass
+    
+
     def name(self) -> str:
         return self.__class__.__name__
 
@@ -226,25 +241,6 @@ class NegDriveAgent(AbstractAgent):
         print(f"Total training steps {total_steps}")
 
 
-    def initialize(self) -> None:   # TODO 
-        """
-        Initialize agent components from checkpoints.
-
-        Semantics:
-        - VLM checkpoint → trainable policy
-        - Diffusion checkpoint → frozen decoder
-        - GRPO reference policy → loaded separately
-        """
-        pass
-        # if self.checkpoint_path:
-        #     ckpt = torch.load(self.checkpoint_path, map_location="cpu")["state_dict"]
-        #     model_dict = self.state_dict()
-        #     filtered_ckpt = {}
-        #     for k, v in ckpt.items():
-        #         k2 = k[len("agent."):] if k.startswith("agent.") else k
-        #         if k2 in model_dict and v.shape == model_dict[k2].shape:
-        #             filtered_ckpt[k2] = v
-        #     self.load_state_dict(filtered_ckpt, strict=False)
 
     def _verify_model_dtype(
         self,

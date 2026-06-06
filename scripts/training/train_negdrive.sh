@@ -69,6 +69,9 @@ torchrun \
     agent.vlm_lr=1e-5 \
     agent.opt_weight_decay=0.01 \
     agent.opt_eps=1e-8 \
+    agent.lora_r=16 \
+    agent.lora_alpha=32 \
+    agent.lora_dropout=0.00 
 
 
 

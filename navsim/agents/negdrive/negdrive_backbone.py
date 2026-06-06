@@ -6,8 +6,8 @@
 @Version :   0.0.1
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   
-@Desc    :  
+@Status  :   【正在优化】
+@Desc    :  【D】该函数 rd2 优化完成
 '''
 
 
@@ -77,11 +77,13 @@ class NegDriveBackbone(nn.Module):
                  vlm_lora_path: Optional[str] = None,
                  device: str = "cuda",
                  max_padding_len: int = 2800,
+                 lora_r: int = 16,
+                 lora_alpha: int = 32,
+                 lora_dropout: float= 0.05,
                  mode: Literal["train", "eval"] = "train",
-                 # TODO 添加 lora config 
                  ):
         """
-        【正在优化】
+        【D】
         """
         super().__init__()
 
@@ -91,6 +93,10 @@ class NegDriveBackbone(nn.Module):
         self.device = device
         self.max_padding_len = max_padding_len
         self.mode = mode
+
+        self.lora_r = lora_r
+        self.lora_alpha = lora_alpha
+        self.lora_dropout = lora_dropout
 
         print(f"Initializing backbone of type: '{self.model_type}' from path: '{checkpoint_path}'")
 
@@ -126,18 +132,13 @@ class NegDriveBackbone(nn.Module):
                 self._set_internvl_finetune_mode()  
                 
                 # apply LoRA to language model
-                self._apply_lora_to_language_model(r=16,
-                                                lora_alpha=32,
-                                                lora_dropout=0.05)
-
+                self._apply_lora_to_language_model(r=self.lora_r,
+                                                   lora_alpha=self.lora_alpha,
+                                                   lora_dropout=self.lora_dropout)
                 self._print_trainable_parameters()
-
                 print(f"Backbone '{self.model_type}' loaded successfully on device '{self.device}'.")
 
             elif self.mode == "eval":
-                print("测试模式")
-
-                # Check for LoRA modules and load if available  TODO 
                 if vlm_lora_path is not None and os.path.exists(vlm_lora_path):
                     self.model.language_model = PeftModel.from_pretrained(
                         self.model.language_model,
@@ -165,7 +166,6 @@ class NegDriveBackbone(nn.Module):
         (for internvl) Freeze vision encoder, mlp projector, and apply lora to language model 
 
         """
-
         # freeze vision encoder 
         for param in self.model.vision_model.parameters():
             param.requires_grad = False
@@ -219,16 +219,13 @@ class NegDriveBackbone(nn.Module):
             self.model.language_model,
             lora_config
         )
-        if not hasattr(self.model.language_model, "peft_config"):
-            raise RuntimeError("LoRA 失败！！！！")
+        self.model.language_model = self.model.language_model.to(self.device)
+
+        if not isinstance(self.model.language_model, PeftModel):
+            raise RuntimeError("LoRA application failed: language_model is not a PeftModel instance.")
+
         print(f"LORA APPLIED: R={r}, ALPHA={lora_alpha}, DROPOUT={lora_dropout}")
 
-
-        # Check if LoRA layers are applied to the model and calculate VRAM usage.
-
-        total_params = sum(p.numel() for p in self.model.parameters())
-        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
-        
 
     def _print_trainable_parameters(self):
         """

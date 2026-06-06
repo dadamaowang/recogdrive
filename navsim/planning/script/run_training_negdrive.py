@@ -178,15 +178,14 @@ def main(cfg: DictConfig) -> None:
     logger.info("Building Agent")
     agent: AbstractAgent = instantiate(cfg.agent) 
 
-    sys.exit(0)
-    # 【正在优化】
-
 
     logger.info("Building Lightning Module")    
     lightning_module = AgentLightningVLMRL(
         agent=agent,
         cfg=cfg
     )
+    sys.exit(0)
+    # 【正在优化】
 
     logger.info("Building SceneLoader and Dataset...")
     train_data, val_data = build_datasets(cfg, agent)

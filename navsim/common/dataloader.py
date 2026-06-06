@@ -222,10 +222,9 @@ class MetricCacheLoader:
             new_full_path = prefix_path + relative_path
             metric_cache_dict[relative_path.split("/")[-2]] = new_full_path
         
-        k, v = next(iter(metric_cache_dict.items()))
-        print(f"Example token: {k}, Example cache path: {v}")
+        # k, v = next(iter(metric_cache_dict.items()))
+        # print(f"Example token: {k}, Example cache path: {v}")
         
-
         return metric_cache_dict
 
     @property
