@@ -20,12 +20,12 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=0606_2b_negdrive_train_v1
+EXP_NAME=0607_debug
 FAST_DEV_RUN=false
 
 MASTER_PORT=63669
 PORT=63665
-GPUS=4
+GPUS=2
 
 MASTER_PORT=${MASTER_PORT:-63669}
 PORT=${PORT:-63665}
@@ -49,12 +49,13 @@ torchrun \
     dataloader.params.batch_size=16 \
     dataloader.params.num_workers=8 \
     trainer.params.fast_dev_run=${FAST_DEV_RUN} \
-    trainer.params.limit_train_batches=1.0 \
-    trainer.params.limit_val_batches=1.0 \
+    trainer.params.limit_train_batches=0.1 \
+    trainer.params.limit_val_batches=0.1 \
     trainer.params.max_epochs=5 \
+    trainer.params.max_steps=10 \
     trainer.params.devices=${GPUS} \
     trainer.params.strategy="ddp_find_unused_parameters_false" \
-    trainer.params.val_check_interval=20 \
+    trainer.params.val_check_interval=1 \
     trainer.params.precision=bf16-mixed \
     agent.metric_cache_path="/root/navsim_workspace/exps/metric_cache_train" \
     agent.vlm_path="/root/navsim_workspace/models/ReCogDrive-VLM-2B" \

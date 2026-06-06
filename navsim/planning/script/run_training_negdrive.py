@@ -7,7 +7,7 @@
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
 @Status  :   runnable, developing, draft finished 
-@Desc    :   按照代码执行顺序，【正在优化】tag 处整合
+@Desc    :   【正在优化】
 '''
 
 from typing import Tuple, List, Dict, Any 
@@ -32,15 +32,9 @@ from navsim.common.dataloader import SceneLoader
 from navsim.planning.training.dataset import Dataset
 from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL, VRAMMonitor, OptimizerHealthMonitor
 
+import sys
 
 logger = logging.getLogger(__name__)
-
-
-class RankZeroFilter(logging.Filter):
-    def filter(self, record):
-        # 未初始化分布式（单卡/调试）或 rank==0 时允许打印
-        return not dist.is_initialized() or dist.get_rank() == 0
-logger.addFilter(RankZeroFilter())
 
 
 CONFIG_PATH = "config/training"
@@ -168,22 +162,25 @@ def main(cfg: DictConfig) -> None:
     local_rank = int(os.getenv('LOCAL_RANK', 0))
     world_size = int(os.getenv('WORLD_SIZE', 1))    
     rank = int(os.getenv('RANK', 0))
+    logger.info("Initialized distributed training with local_rank=%d, world_size=%d, rank=%d", local_rank, world_size, rank)
 
-    # Only print logs from the main process.
-    if rank != 0:
-        logger.disabled = True
     dist.init_process_group(backend='nccl')
     torch.cuda.set_device(local_rank)
 
 
-    # 【正在优化】
     pl.seed_everything(cfg.seed, workers=True)
     logger.info(f"Global Seed set to {cfg.seed}")
 
+
     logger.info(f"Path where all results are stored: {cfg.output_dir}")
+
 
     logger.info("Building Agent")
     agent: AbstractAgent = instantiate(cfg.agent) 
+
+    sys.exit(0)
+    # 【正在优化】
+
 
     logger.info("Building Lightning Module")    
     lightning_module = AgentLightningVLMRL(

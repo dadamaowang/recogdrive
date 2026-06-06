@@ -6,11 +6,11 @@
 @Version :   0.0.1
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   DOING
-@Desc    :   None
+@Status  :   【正在优化】
+@Desc    :   
 '''
 
-import pdb
+# import pdb
 
 from typing import Any, List, Dict, Optional, Tuple, Union, Literal
 import os
@@ -44,8 +44,7 @@ class NegDriveAgent(AbstractAgent):
     def __init__(   
         self,
         *,
-        trajectory_sampling: TrajectorySampling,    # TODO
-
+        trajectory_sampling: TrajectorySampling,    # for building targets 
         metric_cache_path: Optional[str] = None,    # for validation 
         mode: Literal["train", "eval"] = "train",   # control certain behaviors (e.g. caching, rollout, etc.) based on mode
 
@@ -60,7 +59,6 @@ class NegDriveAgent(AbstractAgent):
         opt_type: str = "AdamW",
         opt_weight_decay: float = 0.01,
         opt_eps: float = 1e-8,
-
 
         # ========== DIFFUSION (DECODER) ==========
         dit_type: str = "small",
@@ -77,10 +75,13 @@ class NegDriveAgent(AbstractAgent):
         entropy_coef: float = 0.01,
         kl_coef: float = 0.0,
 
-
         # ========== RUNTIME ==========
         device: Optional[str] = None,
     ):
+        """【正在优化】
+        
+        """
+        
         super().__init__()
 
         # -----------------------
@@ -90,19 +91,16 @@ class NegDriveAgent(AbstractAgent):
         self.metric_cache_path = metric_cache_path
         self.device = device or f"cuda:{int(os.getenv('LOCAL_RANK', 0))}"
 
-
-        """NOTE VLM + Diffusion Planner 创建逻辑
-        (1) dit_type : 最主要区别是 input_dim, output_dim 
+        """NOTE VLM + Diffusion Planner 
+        (1) dit_type : main differenct: input_dim, output_dim 
             small : input_embedding_dim = 384
             large : input_embedding_dim = 1536
-        
-            dit_type 跟 vlm_size 是解耦的; 但是最好 2B 和 8B 分别对应
+
+            dit_type is decoupled with vlm_size
 
         (2) vlm_size: 
             small: hidden_embedding_dim = 1536 
             large: hidden_embedding_dim = 3584
-        
-        大的小的主要就是隐空间的 dim 
         """
 
         # -----------------------

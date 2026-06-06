@@ -41,7 +41,7 @@ You are a vehicle trajectory prediction model for autonomous driving. Your task 
 For evaluation, use the **PDM Score**, which combines these metrics: **PDM Score** = NC * DAC * (5*TTC + 5*EP + 2*C + 0*DDC) / 12.
 Your predictions will be evaluated through a non-reactive 4-second simulation with an LQR controller and background actors following their recorded trajectories. The better your predictions, the higher your score.
 """
-
+#【奖励设计TODO】
 
 
 @dataclass  # NOTE 记得 dataclass dec
@@ -70,14 +70,7 @@ class NegDriveGenOutput:
 
 
 
-
-
-
 class NegDriveBackbone(nn.Module):
-    """
-    A simplified vision-language model backbone with direct loading logic
-    for different model architectures (InternVL, Qwen-VL).
-    """
     def __init__(self,
                  model_type: str,
                  checkpoint_path: str,
@@ -88,12 +81,7 @@ class NegDriveBackbone(nn.Module):
                  # TODO 添加 lora config 
                  ):
         """
-        Initializes and loads the specified model and its preprocessor/tokenizer.
-
-        Args:
-            model_type (str): The type of model to load. Supported: 'internvl', 'qwen'.
-            checkpoint_path (str): The path to the model checkpoint.
-            device (str): The device to load the model onto ('cuda', 'cpu').
+        【正在优化】
         """
         super().__init__()
 
@@ -101,9 +89,7 @@ class NegDriveBackbone(nn.Module):
         self.tokenizer = None  
         self.model_type = model_type.lower()
         self.device = device
-        
         self.max_padding_len = max_padding_len
-
         self.mode = mode
 
         print(f"Initializing backbone of type: '{self.model_type}' from path: '{checkpoint_path}'")
@@ -125,9 +111,7 @@ class NegDriveBackbone(nn.Module):
             )
             # Load model-specific configuration
             self._configure_internvl()
-            self.num_image_token = 256
-
-            # TODO resume training 的 
+            self.num_image_token = 256  # 不可改
 
             # 开启 GC (需要在 peft wrap 之前)
             if hasattr(self.model, "gradient_checkpointing_enable"):
@@ -168,7 +152,6 @@ class NegDriveBackbone(nn.Module):
                 print("All model parameters frozen for eval mode.")
 
 
-            
     def _configure_internvl(self):
         """Applies specific configurations required for the InternVL model."""
         self.model.system_message = system_message
