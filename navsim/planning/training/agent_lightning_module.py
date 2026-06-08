@@ -12,6 +12,7 @@
 
 import pytorch_lightning as pl
 from pytorch_lightning import Callback
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 import torch
 from torch import Tensor
@@ -484,8 +485,6 @@ class AgentLightningVLMRL(pl.LightningModule):
     def configure_optimizers(self):
         print('Configure Optimizers ...')
 
-        print("总步数确认：")
-
         total_steps = self.trainer.estimated_stepping_batches
         print(f"total training steps : {total_steps}")
         self.agent.set_total_training_steps(total_steps)
@@ -503,13 +502,6 @@ class AgentLightningVLMRL(pl.LightningModule):
         :param batch_idx: index of batch (ignored)
         :return: scalar loss
         """
-
-        print("=" * 50)
-        print("GC检查：")
-        for name, module in self.agent.vlm.model.named_modules():
-            if hasattr(module, "gradient_checkpointing"):
-                print(name, module.gradient_checkpointing)
-        print("=" * 50)
 
         opt = self.optimizers()
         sch = self.lr_schedulers()
@@ -1035,29 +1027,6 @@ class AgentLightningVLMRL(pl.LightningModule):
         return diff_dtype, diff_input
             
 
-    def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
-        """
-        Save only LoRA adapter weights -- skip everything else.
-        """
-        print("Save Checkpoint...")
-
-        ckpt_callback = self.trainer.checkpoint_callbacks[0]  # assumes single checkpoint callback
-        ckpt_path = ckpt_callback.last_model_path
-        ckpt_name = os.path.splitext(os.path.basename(ckpt_path))[0]
-
-        lora_dir = os.path.join(
-            os.path.dirname(ckpt_path),
-            f"{ckpt_name}_lora"
-        )
-        os.makedirs(lora_dir, exist_ok=True)
-        self.agent.vlm.model.language_model.save_pretrained(lora_dir)
-
-        print(f"[LoRA SAVED] {lora_dir}")
-
-        checkpoint.clear()
-
-
-
     # def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
     #     """
     #     Load LoRA weights back into the VLM.
@@ -1197,3 +1166,21 @@ class OptimizerHealthMonitor(Callback):
         pl_module.log("optimizer/lr", lr, on_step=True, sync_dist=False)
         # pl_module.log("optimizer/grad_norm", grad_norm, on_step=True, sync_dist=False)
         # pl_module.log("optimizer/clip_triggered", float(clip_triggered), on_step=True, sync_dist=False)
+
+
+
+# Custom checkpoint callback that saves LoRA weights alongside Lightning checkpoints.
+class LoRAModelCheckpoint(ModelCheckpoint):
+    def _save_checkpoint(self, trainer, filepath: str) -> None:
+        super()._save_checkpoint(trainer, filepath)
+        pl_module = trainer.lightning_module
+        if getattr(pl_module, "global_rank", 0) != 0:
+            return
+
+        ckpt_name = os.path.splitext(os.path.basename(filepath))[0]
+        lora_dir = os.path.join(os.path.dirname(filepath), f"{ckpt_name}_lora")
+        os.makedirs(lora_dir, exist_ok=True)
+
+        pl_module.agent.vlm.model.language_model.save_pretrained(lora_dir)
+
+        print(f"[LoRA SAVED] {lora_dir}")

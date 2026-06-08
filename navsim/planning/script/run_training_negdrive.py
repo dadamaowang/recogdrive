@@ -16,7 +16,7 @@ import logging
 import os
 import hydra
 from hydra.utils import instantiate
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
  
 import torch
 from torch.utils.data import DataLoader
@@ -24,13 +24,16 @@ import torch.distributed as dist
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+
 
 from navsim.agents.abstract_agent import AbstractAgent
 from navsim.common.dataclasses import SceneFilter
 from navsim.common.dataloader import SceneLoader
 from navsim.planning.training.dataset import Dataset
-from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL, VRAMMonitor, OptimizerHealthMonitor
+from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL, VRAMMonitor, OptimizerHealthMonitor, LoRAModelCheckpoint
+
+
 
 import sys
 
@@ -44,7 +47,6 @@ CONFIG_NAME = "default_training"
 torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision('high')  
 torch.cuda.set_per_process_memory_fraction(0.95, 0) 
-
 
 
 def negdrive_collate_fn(
@@ -184,10 +186,6 @@ def main(cfg: DictConfig) -> None:
         agent=agent,
         cfg=cfg
     )
-    sys.exit(0)
-    # 【正在优化】
-
-
 
     logger.info("Building SceneLoader and Dataset...")
     train_data, val_data = build_datasets(cfg, agent)
@@ -199,37 +197,39 @@ def main(cfg: DictConfig) -> None:
         **cfg.dataloader.params,
         shuffle=True
     )
-    logger.info("Num training samples: %d", len(train_data))
     val_dataloader = DataLoader(
         val_data,
         collate_fn=negdrive_collate_fn,
         **cfg.dataloader.params,
         shuffle=False
     )
-    logger.info("Num validation samples: %d", len(val_data))
+
+    wandb_config = OmegaConf.to_container(cfg, resolve=True) if "OmegaConf" in globals() else dict(cfg)
+    wandb_logger = WandbLogger(
+        project="negdrive_training_pro01",
+        name=cfg.experiment_name,
+        config=wandb_config,
+        save_dir=cfg.output_dir,
+    )
 
     logger.info("Building Trainer")
     trainer = pl.Trainer(
         **cfg.trainer.params, 
-        logger=TensorBoardLogger(   # TODO W&B log; 可视化等
-            save_dir=cfg.output_dir, 
-            name="tb",
-            version=cfg.experiment_name,
-            default_hp_metric=True,      
-            ), 
-        log_every_n_steps=1, 
+        logger=wandb_logger,
         callbacks=[
             VRAMMonitor(), 
             LearningRateMonitor(logging_interval="step"),
             OptimizerHealthMonitor(),
-            ModelCheckpoint(monitor="val/best_of_g_reward", mode="max", 
-                            save_top_k=3, every_n_train_steps=100, 
-                            filename="best_g_reward-{step:08d}-{val/best_of_g_reward:.4f}",
-                            save_last=True,),
-                            
+            LoRAModelCheckpoint(    # TODO 调整 save 参数
+                monitor="val/best_of_g_reward",
+                mode="max",
+                save_top_k=3,
+                filename="best_g_reward-step={step:08d}-val_best_of_g_reward={val/best_of_g_reward:.4f}",
+                save_last=True,
+            ),
         ]
         )
-        # callbacks: Train normally, but also run this checkpoint-saving logic during training.
+
 
     logger.info("Starting Training")
     trainer.fit(
