@@ -54,7 +54,10 @@ class NegDriveAgent(AbstractAgent):
         vlm_lora_path: Optional[str] = None,  
         vlm_type: str = "internvl",
         vlm_size: str = "large",       
-       
+
+        max_text_tokens: int = 128,   # max generated text tokens
+        pass_cot_token_only: bool = False,  # if True, pass only cot token's last hidden states to planner
+
         # ========== Optimizers and Schedulers ==========
         vlm_lr: float = 1e-5,
         opt_type: str = "AdamW",
@@ -73,7 +76,6 @@ class NegDriveAgent(AbstractAgent):
         # ========== RL / GRPO ==========
         per_sample_rollout: int = 4,
         bag_g: int = 4,   # Best-of-G reward
-        max_text_tokens: int = 128,   # max generated text tokens
         max_padding_len: int = 2800,   # max token length after padding (for diffusion input) 
         reward_scale: float = 1.0,
         entropy_coef: float = 0.01,
@@ -134,6 +136,14 @@ class NegDriveAgent(AbstractAgent):
         )
         self.vlm = self.vlm.to(self.device)
 
+
+        # -----------------------
+        # vlm setting
+        # -----------------------
+        self.max_text_tokens = max_text_tokens
+
+        self.pass_cot_token_only = pass_cot_token_only
+
         # -----------------------
         # Diffusion planner (frozen)
         # -----------------------
@@ -187,8 +197,8 @@ class NegDriveAgent(AbstractAgent):
         # -----------------------
         # Load Model Final Check
         # -----------------------        
-        self._verify_model_dtype(self.vlm, "VLM")
-        self._verify_model_dtype(self.action_head, "Diffusion Planner")
+        # self._verify_model_dtype(self.vlm, "VLM")
+        # self._verify_model_dtype(self.action_head, "Diffusion Planner")
 
 
         # -----------------------
@@ -198,8 +208,7 @@ class NegDriveAgent(AbstractAgent):
 
         self.per_sample_rollout = per_sample_rollout
         self.bag_g = bag_g
-        self.max_text_tokens = max_text_tokens
-
+        
 
         self.opt_type = opt_type
         self.opt_weight_decay = opt_weight_decay
@@ -212,6 +221,9 @@ class NegDriveAgent(AbstractAgent):
         # self.entropy_coef = entropy_coef
         # self.kl_coef = kl_coef
         # self.reference_policy_checkpoint = reference_policy_checkpoint
+
+
+
 
         # # -----------------------
         # # others TOOD
@@ -560,16 +572,16 @@ class NegDriveAgent(AbstractAgent):
                     )
 
                 last_hidden_states = fwd_output.hidden_states[-1].clone()
-                del fwd_output
                 if last_hidden_states.ndim == 2: 
                     last_hidden_states = last_hidden_states.unsqueeze(0)
 
+                if self.pass_cot_token_only:
+                    resp_start = gen_output.response_start_idx
+                    last_hidden_states = last_hidden_states[:, resp_start:, :]
+
+                del fwd_output, gen_output
 
             predictions = self.action_head.get_action(last_hidden_states.to(diff_dtype), diff_input)
-
-            print(predictions)
-            print("检查 pred")
-            sys.exit(0)
 
             poses = predictions["pred_traj"].float().cpu().squeeze(0)
         

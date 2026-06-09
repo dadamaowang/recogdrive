@@ -15,7 +15,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 
 TRAIN_TEST_SPLIT=navtest
-EXP_NAME=debug_0609_test_only_cot_01
+EXP_NAME=test_only_cot_witout_image_ori_2b_0609
 
 
 export MASTER_PORT=63669
@@ -57,6 +57,7 @@ torchrun \
     agent.vlm_size="small" \
     agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
     agent.dit_type="small" \
+    agent.pass_cot_token_only=true \
     agent.per_sample_rollout=4 \
     agent.bag_g=4 \
     agent.max_text_tokens=512 \
