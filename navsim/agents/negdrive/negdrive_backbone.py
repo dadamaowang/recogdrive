@@ -7,7 +7,7 @@
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
 @Status  :   【正在优化】
-@Desc    :  【D】该函数 rd2 优化完成
+@Desc    :  
 '''
 
 
@@ -361,8 +361,6 @@ class NegDriveBackbone(nn.Module):
             attention_mask = attention_mask.unsqueeze(0)    # [1, SeqLen]
 
         prompt_len = input_ids.shape[1]
-
-
 
         # -----------------------
         #   Generate New Tokens

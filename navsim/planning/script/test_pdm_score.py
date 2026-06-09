@@ -158,7 +158,12 @@ def run_pdm_score(args: List[Dict[str, Union[List[str], DictConfig]]]) -> List[D
                 # scene = scene_loader.get_scene_from_token(token)
                 # trajectory = agent.compute_trajectory(agent_input, scene)
             else:
-                trajectory = agent.compute_trajectory_recogdrive(agent_input)
+                """TODO customize 
+                
+                """
+                # trajectory = agent.compute_trajectory_recogdrive(agent_input)
+                trajectory = agent.compute_traj_cot(agent_input)
+
             pdm_result = pdm_score(
                 metric_cache=metric_cache,
                 model_trajectory=trajectory,
@@ -291,14 +296,6 @@ def main(cfg: DictConfig) -> None:
                 Results are stored in: {save_path / f"{timestamp}.csv"}.
             """
         )
-
-
-    print("成功")
-
-
-
-
-
 
 
 

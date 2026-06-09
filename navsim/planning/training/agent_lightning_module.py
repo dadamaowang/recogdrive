@@ -599,14 +599,6 @@ class AgentLightningVLMRL(pl.LightningModule):
         pixel_values_cat, questions, num_patches_list, history_trajectory = self.unpack_features(features)
         diff_dtype, diff_input = self.get_diff_input(features, history_trajectory)
 
-        # print("检查图像样本大小：")
-        # print(f"pixel_values_cat shape: {pixel_values_cat.shape}, "
-        #     f"size: {pixel_values_cat.numel() * 2 / 1e9:.2f}GB (bfloat16)")
-
-        # After unpack_features:
-        # self._log_vram("【显存检查01】after_unpack")
-
-
         # =============================
         # Rollout
         # =============================

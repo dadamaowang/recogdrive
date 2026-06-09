@@ -11,6 +11,7 @@
 '''
 
 # import pdb
+import sys 
 
 from typing import Any, List, Dict, Optional, Tuple, Union, Literal
 import os
@@ -463,9 +464,10 @@ class NegDriveAgent(AbstractAgent):
         return decoded_paths
 
 
-    def compute_trajectory_recogdrive(self, 
-                           agent_input: AgentInput  # TODO AgentInput
-                           ) -> Trajectory:
+    def compute_trajectory_recogdrive(
+            self, 
+            agent_input: AgentInput  # TODO AgentInput
+            ) -> Trajectory:
         self.eval()
 
         features: Dict[str, torch.Tensor] = {}
@@ -497,6 +499,39 @@ class NegDriveAgent(AbstractAgent):
     def compute_trajectory_recogdrive_without_prompt(self, 
                                                     agent_input: AgentInput  # TODO AgentInput
                                                      ) -> Trajectory:
+        raise NotImplementedError
+        # self.eval()
+
+        # features: Dict[str, torch.Tensor] = {}
+        # # build features
+        # for builder in self.get_feature_builders():    # TODO get_feature_builders()
+        #     features.update(builder.compute_features(agent_input))
+        # # add batch dimension
+        # features = {k: v.unsqueeze(0) for k, v in features.items()}
+
+        # with torch.no_grad():
+        #     with torch.autocast("cuda", dtype=torch.bfloat16):
+        #         pixel_values_cat, questions, num_patches_list, history_trajectory = self.unpack_features(features)
+        #         diff_dtype, diff_input = self.get_diff_input(features, history_trajectory)
+
+        #         outputs = self.vlm(pixel_values_cat, questions, num_patches_list=num_patches_list)
+        #         last_hidden_state = outputs.hidden_states[-1]
+
+        #         status_feature = features["status_feature"].cuda()
+        #         if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
+        #         if last_hidden_state.ndim == 2: last_hidden_state = last_hidden_state.unsqueeze(0)
+
+        #     predictions = self.action_head.get_action(last_hidden_state.to(diff_dtype), diff_input)
+
+        #     poses = predictions["pred_traj"].float().cpu().squeeze(0)
+        
+        # return Trajectory(poses)    
+
+    
+    def compute_traj_cot(self, agent_input: AgentInput) -> Trajectory:
+        """TODO w/o image tokens 设置
+        
+        """
         self.eval()
 
         features: Dict[str, torch.Tensor] = {}
@@ -506,23 +541,121 @@ class NegDriveAgent(AbstractAgent):
         # add batch dimension
         features = {k: v.unsqueeze(0) for k, v in features.items()}
 
+        pixel_values_cat, questions, num_patches_list, history_trajectory = self.unpack_features_cot_prompt(features)
+        diff_dtype, diff_input = self.get_diff_input(features, history_trajectory)
+
         with torch.no_grad():
             with torch.autocast("cuda", dtype=torch.bfloat16):
-                pixel_values_cat, questions, num_patches_list, history_trajectory = self.unpack_features(features)
-                diff_dtype, diff_input = self.get_diff_input(features, history_trajectory)
 
-                outputs = self.vlm(pixel_values_cat, questions, num_patches_list=num_patches_list)
-                last_hidden_state = outputs.hidden_states[-1]
+                gen_output = self.vlm.generate_text_actions(
+                    pixel_values_cat, 
+                    questions, 
+                    num_patches_list=num_patches_list,
+                    max_new_tokens=self.max_text_tokens
+                )
+                fwd_output = self.agent.vlm.forward_with_ids(
+                        pixel_values_cat,
+                        gen_output.full_ids,
+                        gen_output.attention_mask
+                    )
 
-                status_feature = features["status_feature"].cuda()
-                if status_feature.ndim == 1: status_feature = status_feature.unsqueeze(0)
-                if last_hidden_state.ndim == 2: last_hidden_state = last_hidden_state.unsqueeze(0)
+                last_hidden_states = fwd_output.hidden_states[-1].clone()
+                del fwd_output
+                if last_hidden_states.ndim == 2: 
+                    last_hidden_states = last_hidden_states.unsqueeze(0)
 
-            predictions = self.action_head.get_action(last_hidden_state.to(diff_dtype), diff_input)
+
+            predictions = self.action_head.get_action(last_hidden_states.to(diff_dtype), diff_input)
+
+            print(predictions)
+            print("检查 pred")
+            sys.exit(0)
 
             poses = predictions["pred_traj"].float().cpu().squeeze(0)
         
-        return Trajectory(poses)    
+        return Trajectory(poses)   
+
+
+    def unpack_features_cot_prompt(self, features: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, List[str], List[int]]:
+        """
+        unpack_features, 自定义 CoT Prompt
+
+        Args:
+            features: Dictionary containing raw feature tensors.
+
+        """
+        for key, tensor in features.items():
+            if isinstance(tensor, torch.Tensor):
+                features[key] = tensor.cuda()
+        
+        history_trajectory = features["history_trajectory"].cuda()  
+        if history_trajectory.ndim == 2:
+            history_trajectory = history_trajectory.unsqueeze(0)
+
+        high_command_one_hot = features["high_command_one_hot"].cuda()
+        if high_command_one_hot.ndim == 1:
+            high_command_one_hot = high_command_one_hot.unsqueeze(0)
+        
+        image_path_tensor = features["image_path_tensor"]
+        if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
+        image_paths = decode_paths_from_tensor(image_path_tensor)
+
+        pixel_values_list = [load_image(path) for path in image_paths] 
+        num_patches_list = [p.shape[0] for p in pixel_values_list]
+        pixel_values_cat = torch.cat(pixel_values_list, dim=0).cuda()
+
+        navigation_commands = ['turn left', 'go straight', 'turn right']
+        command_indices = torch.argmax(high_command_one_hot, dim=-1)
+        command_str_list = [navigation_commands[idx.item()] for idx in command_indices]
+
+        questions = []
+        batch_size = high_command_one_hot.shape[0]
+        for i in range(batch_size):
+            history_trajectory_sample = history_trajectory[i]
+            command_str_sample = command_str_list[i]
+
+            history_str = ' '.join([
+                f'   - t-{3-j}: ({format_number(history_trajectory_sample[j, 0].item())}, '
+                f'{format_number(history_trajectory_sample[j, 1].item())}, '
+                f'{format_number(history_trajectory_sample[j, 2].item())})'
+                for j in range(history_trajectory_sample.shape[0])
+            ])
+
+            # Define the hierarchical reasoning framework
+            reasoning_framework = (
+                "Before providing the trajectory, follow this hierarchical cognitive process:\n"
+                "1. **Foundational Perception**: Describe the critical static and dynamic elements visible (traffic lights, specific vehicles, obstacles).\n"
+                "2. **Dynamic Understanding**: Analyze the movement and intent of surrounding agents relative to your path.\n"
+                "3. **Planning & Reasoning**: Formulate your high-level strategy and explain the causal reason for your decision.\n"
+                "4. **Advanced Reasoning**: Briefly consider a counterfactual (e.g., 'If the lead car accelerates, I will...') to ensure safety margins.\n"
+            )
+
+            prompt = (
+                "<image>\n"
+                "You are an advanced autonomous driving cognitive agent. Based on the provided front camera view, "
+                "historical context, and navigation command, perform a step-by-step reasoning analysis followed by trajectory planning.\n\n"
+                "### Inputs:\n"
+                f"- Historical motion (last 4 timesteps): {history_str}\n"
+                f"- Navigation target: [{command_str_sample.upper()}]\n\n"
+                "### Instructions:\n"
+                f"{reasoning_framework}"
+            )
+                                    
+            output_requirements = (
+                "\n### Output Format:\n"
+                "1. Reasoning Trace: Write your 4-level analysis as a concise paragraph.\n"
+                "2. Trajectory: Predict 8 future waypoints encapsulated in [PT, ...].\n"
+                "- Each point: (x:float, y:float, heading:float)\n"
+                "- Maintain 2 decimal places of precision.\n"
+                "- Example: [PT, (1.20, 0.50, 0.05), ...]"
+            )
+
+            questions.append(f"{prompt}{output_requirements}")
+        
+        return pixel_values_cat, questions, num_patches_list, history_trajectory
+
+
+
 
 
 
