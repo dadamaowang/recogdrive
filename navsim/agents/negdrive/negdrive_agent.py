@@ -553,7 +553,7 @@ class NegDriveAgent(AbstractAgent):
                     num_patches_list=num_patches_list,
                     max_new_tokens=self.max_text_tokens
                 )
-                fwd_output = self.agent.vlm.forward_with_ids(
+                fwd_output = self.vlm.forward_with_ids(
                         pixel_values_cat,
                         gen_output.full_ids,
                         gen_output.attention_mask
@@ -653,9 +653,6 @@ class NegDriveAgent(AbstractAgent):
             questions.append(f"{prompt}{output_requirements}")
         
         return pixel_values_cat, questions, num_patches_list, history_trajectory
-
-
-
 
 
 

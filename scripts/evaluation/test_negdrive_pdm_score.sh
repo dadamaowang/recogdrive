@@ -15,7 +15,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 
 TRAIN_TEST_SPLIT=navtest
-EXP_NAME=debug_0609_test_only_cot
+EXP_NAME=debug_0609_test_only_cot_01
 
 
 export MASTER_PORT=63669
@@ -38,7 +38,7 @@ export PORT=${PORT}
 echo "GPUS: ${GPUS}"
 # export CUDA_LAUNCH_BLOCKING=1 # open only when debug
 
-export HYDRA_FULL_ERROR=1
+# export HYDRA_FULL_ERROR=1
 
 torchrun \
     --nnodes=1 \
