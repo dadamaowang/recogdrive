@@ -470,7 +470,83 @@ class NegDriveBackbone(nn.Module):
             input_ids=input_ids,
             attention_mask=attention_mask
         )
+
+
+    def inference_cot(
+            self,
+            pixel_values: torch.Tensor,
+            questions: List[str],
+            num_patches_list: List[int], 
+            max_new_tokens: int = 256,   
+        ) -> NegDriveGenOutput:
+        """
+        CoT Inference only at 'eval' phase. Compatible with vLLM service. 
+                          
+        """
+        # ----------------------
+        #   Prepare Input
+        # ----------------------
+        queries = self._build_queries(pixel_values, questions, num_patches_list)
         
+        self.tokenizer.padding_size = 'left'
+        model_inputs = self.tokenizer(
+            queries,
+            return_tensors='pt',
+            padding=True,
+            truncation=True,
+            max_length=self.max_padding_len,
+        )
+        device = torch.device("cuda")
+
+        input_ids = model_inputs['input_ids'].to(device)    # [B, SeqLen]
+        attention_mask = model_inputs['attention_mask'].to(device)  # [B, SeqLen]
+        # ensure [B, SeqLen] (in case B=1)
+        if input_ids.ndim == 1:
+            input_ids = input_ids.unsqueeze(0)  # [1, SeqLen]
+        if attention_mask.ndim == 1:
+            attention_mask = attention_mask.unsqueeze(0)    # [1, SeqLen]
+
+        prompt_len = input_ids.shape[1]
+
+        # -----------------------
+        #   Generate New Tokens
+        # -----------------------
+        generated_ids = self.model.generate(
+            pixel_values=pixel_values,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            max_new_tokens=max_new_tokens,  
+            do_sample=True,
+            temperature=1.0,
+            pad_token_id=self.tokenizer.eos_token_id
+        )   # [B, max_new_tokens] 
+
+        # ---------------------------------------
+        #   Build Full Sequence Attention Mask
+        # ---------------------------------------
+        #  (prompt + generated)   TODO log_prob 计算 等
+        full_ids = torch.cat([input_ids, generated_ids], dim=1)   # [B, prompt_len + new_tokens]
+
+        full_attention_mask = torch.cat([
+            attention_mask, 
+            torch.ones(input_ids.shape[0], generated_ids.shape[1], dtype=torch.long, device=device),
+        ], dim=1)   # [B, prompt_len + new_tokens]
+
+        # ---------------------------------------
+        #   Decode Generated Text
+        # ---------------------------------------
+        text_actions = self.tokenizer.batch_decode(
+            generated_ids, skip_special_tokens=True
+        )
+        print(f"生成文字检查: {text_actions}")
+
+        return NegDriveGenOutput(
+            full_ids=full_ids,
+            attention_mask=full_attention_mask,
+            response_start_idx=prompt_len,
+            text_actions=text_actions
+        )
+
 
     def _build_queries(self,
                        pixel_values,
@@ -495,6 +571,34 @@ class NegDriveBackbone(nn.Module):
 
         return queries
     
+
+    def _build_queries_inf_only(
+            self,
+            pixel_values,
+            questions,
+            num_patches_list
+        ):
+        
+        queries = []
+        for idx, num_patches in enumerate(num_patches_list):
+            question = questions[idx]
+            if pixel_values is not None and '<image>' not in question:
+                question = '<image>\n' + question
+            
+            template = get_conv_template("internvl2_5")
+            template.system_message = system_message
+            template.append_message(template.roles[0], question)
+            template.append_message(template.roles[1], None)
+            query = template.get_prompt()
+
+            image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * self.num_image_token * num_patches + IMG_END_TOKEN
+            query = query.replace('<image>', image_tokens, 1)
+            queries.append(query)
+
+        return queries
+
+
+
 
     def _check_mask_ratio(self, attention_mask: torch.Tensor):
         """check if input+image have padding"""
