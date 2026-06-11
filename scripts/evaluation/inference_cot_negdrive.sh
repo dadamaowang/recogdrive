@@ -7,7 +7,7 @@ source ~/.bashrc
 VLLM_ENV_NAME="serve_vllm"    
 CLIENT_ENV_NAME="nd"  
 
-EXP_NAME="tmp_test"
+EXP_NAME="8B_ori_inference"
 
 
 # ------------------------
@@ -30,22 +30,6 @@ echo "[$(date)] which vLLM : $VLLM_CMD"
 VLM_PATH="/root/navsim_workspace/models/ReCogDrive-VLM-2B/"
 
 
-# nohup $VLLM_CMD serve $VLM_PATH \
-#     --trust-remote-code \
-#     --limit-mm-per-prompt '{"image": 12}' \
-#     --max-model-len 4096 \
-#     --dtype bfloat16 \
-#     --tokenizer $VLM_PATH \
-#     --tokenizer-mode auto \
-#     --gpu-memory-utilization 0.90 \
-#     --port $PORT \
-#     --host 0.0.0.0 \
-#     > vllm_server_${EXP_NAME}.log 2>&1 &
-
-
-LORA_PATH="/root/navsim_workspace/exps/lora_tmp/"
-MAX_LORA_RANK=16
-
 nohup $VLLM_CMD serve $VLM_PATH \
     --trust-remote-code \
     --limit-mm-per-prompt '{"image": 12}' \
@@ -53,13 +37,29 @@ nohup $VLLM_CMD serve $VLM_PATH \
     --dtype bfloat16 \
     --tokenizer $VLM_PATH \
     --tokenizer-mode auto \
-    --enable-lora \
-    --max-lora-rank $MAX_LORA_RANK \
-    --lora-modules neg_lora=$LORA_PATH \
     --gpu-memory-utilization 0.90 \
     --port $PORT \
     --host 0.0.0.0 \
     > vllm_server_${EXP_NAME}.log 2>&1 &
+
+
+# LORA_PATH="/root/navsim_workspace/exps/lora_tmp/"
+# MAX_LORA_RANK=16
+
+# nohup $VLLM_CMD serve $VLM_PATH \
+#     --trust-remote-code \
+#     --limit-mm-per-prompt '{"image": 12}' \
+#     --max-model-len 4096 \
+#     --dtype bfloat16 \
+#     --tokenizer $VLM_PATH \
+#     --tokenizer-mode auto \
+#     --enable-lora \
+#     --max-lora-rank $MAX_LORA_RANK \
+#     --lora-modules neg_lora=$LORA_PATH \
+#     --gpu-memory-utilization 0.90 \
+#     --port $PORT \
+#     --host 0.0.0.0 \
+#     > vllm_server_${EXP_NAME}.log 2>&1 &
 
 
 
@@ -96,8 +96,42 @@ echo "[$(date)] switch to $CLIENT_ENV_NAME environment..."
 conda activate $CLIENT_ENV_NAME
 
 
+export NAVSIM_EXP_ROOT="/root/navsim_workspace/exps"    
 
-# python infer_client.py
+export NAVSIM_DEVKIT_ROOT="/root/recogdrive"
+export OPENSCENE_DATA_ROOT="/root/navsim_workspace/dataset"
+export NUPLAN_MAPS_ROOT="$OPENSCENE_DATA_ROOT/maps"
+export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
+
+
+TRAIN_TEST_SPLIT=navtest
+EXP_NAME=debug_vllm_inf_cot
+
+
+python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
+    train_test_split=$TRAIN_TEST_SPLIT \
+    experiment_name=$EXP_NAME \
+    metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
+    agent=negdrive_agent \
+    agent.mode="eval" \
+    agent.metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
+    cache_path=null \
+    force_cache_computation=false \
+    agent.vlm_path="/root/navsim_workspace/models/ReCogDrive-VLM-2B" \
+    agent.mode="eval" \
+    agent.vlm_size="small" \
+    agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
+    agent.dit_type="small" \
+    agent.pass_cot_token_only=true \
+    agent.per_sample_rollout=4 \
+    agent.bag_g=4 \
+    agent.max_text_tokens=512 \
+    agent.max_padding_len=2800 \
+    agent.vlm_lr=1e-5 \
+    agent.opt_weight_decay=0.01 \
+    agent.opt_eps=1e-8 \
+    # agent.vlm_lora_path="/root/navsim_workspace/exps/0605_2b_negdrive_train_v1/last_lora/" \
+
 
 
 
