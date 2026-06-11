@@ -33,6 +33,8 @@ nohup $VLLM_CMD serve $VLM_PATH \
     --limit-mm-per-prompt '{"image": 12}' \
     --max-model-len 4096 \
     --dtype bfloat16 \
+    --tokenizer $VLM_PATH \
+    --tokenizer-mode auto \
     --gpu-memory-utilization 0.90 \
     --port $PORT \
     --host 0.0.0.0 \
@@ -57,7 +59,7 @@ VLLM_PID=$!
 echo "[$(date)] vLLM service is launched: $VLLM_PID"
 
 echo "[$(date)] wait vLLM initialize..."
-MAX_RETRIES=60
+MAX_RETRIES=120
 RETRY_COUNT=0
 
 while true; do

@@ -97,4 +97,10 @@ torchrun \
     agent.lora_dropout=0.00 
 
 
-
+# ==========================================
+# Kill Clash Process
+# ==========================================
+echo "[$(date)] Finish Training "
+kill $CLASH_PID
+wait $CLASH_PID 2>/dev/null
+echo "[$(date)] ✅ GPU Released"
