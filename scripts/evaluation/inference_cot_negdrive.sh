@@ -9,8 +9,9 @@ CLIENT_ENV_NAME="nd"
 
 EXP_NAME="tmp_test"
 
+
 # ------------------------
-# 准备 vLLM Inference 服务
+# Prepare vLLM Inference 
 # ------------------------
 
 NODE_NAME="localhost"
@@ -23,41 +24,51 @@ conda activate $VLLM_ENV_NAME
 
 
 VLLM_CMD=$(which vllm)
-echo "[$(date)] 使用的 vLLM 路径: $VLLM_CMD"
+echo "[$(date)] which vLLM : $VLLM_CMD"
+
 
 VLM_PATH="/root/navsim_workspace/models/ReCogDrive-VLM-2B/"
 
+
+# nohup $VLLM_CMD serve $VLM_PATH \
+#     --trust-remote-code \
+#     --limit-mm-per-prompt '{"image": 12}' \
+#     --max-model-len 4096 \
+#     --dtype bfloat16 \
+#     --tokenizer $VLM_PATH \
+#     --tokenizer-mode auto \
+#     --gpu-memory-utilization 0.90 \
+#     --port $PORT \
+#     --host 0.0.0.0 \
+#     > vllm_server_${EXP_NAME}.log 2>&1 &
+
+
+LORA_PATH="/root/navsim_workspace/exps/lora_tmp/"
+MAX_LORA_RANK=16
 
 nohup $VLLM_CMD serve $VLM_PATH \
     --trust-remote-code \
     --limit-mm-per-prompt '{"image": 12}' \
     --max-model-len 4096 \
     --dtype bfloat16 \
+    --tokenizer $VLM_PATH \
+    --tokenizer-mode auto \
+    --enable-lora \
+    --max-lora-rank $MAX_LORA_RANK \
+    --lora-modules neg_lora=$LORA_PATH \
     --gpu-memory-utilization 0.90 \
     --port $PORT \
     --host 0.0.0.0 \
     > vllm_server_${EXP_NAME}.log 2>&1 &
 
 
-# LORA_PATH=""
-# nohup vllm serve OpenGVLab/InternVL2-8B \
-#     --trust-remote-code \
-#     --dtype bfloat16 \
-#     --max-model-len 4096 \
-#     --limit-mm-per-prompt image=1 \
-#     --enable-lora \
-#     --max-lora-rank 16 \
-#     --lora-modules negdrive_lora=/path/to/your/negdrive_lora \
-#     --port 8000 \
-#     --host 0.0.0.0 \
-#     > vllm_lora_server.log 2>&1 &
 
 
 VLLM_PID=$!
 echo "[$(date)] vLLM service is launched: $VLLM_PID"
 
 echo "[$(date)] wait vLLM initialize..."
-MAX_RETRIES=60
+MAX_RETRIES=120
 RETRY_COUNT=0
 
 while true; do
@@ -79,13 +90,9 @@ done
 
 
 # ------------------------
-#  执行测试脚本
+#  Execute test script
 # ------------------------
-
-# ==========================================
-# 5. 切换到 CLIENT 环境，执行推理脚本
-# ==========================================
-echo "[$(date)] 切换到 $CLIENT_ENV_NAME 环境准备执行推理..."
+echo "[$(date)] switch to $CLIENT_ENV_NAME environment..."
 conda activate $CLIENT_ENV_NAME
 
 
@@ -94,10 +101,10 @@ conda activate $CLIENT_ENV_NAME
 
 
 
-# # ==========================================
-# # 6. 清理后台进程，释放 GPU
-# # ==========================================
-echo "[$(date)] 推理完成，正在清理 vLLM 后台进程 (PID: $VLLM_PID)..."
+# ==========================================
+# release GPUs
+# ==========================================
+echo "[$(date)] Finished: $VLLM_PID)..."
 kill $VLLM_PID
 wait $VLLM_PID 2>/dev/null
-echo "[$(date)] ✅ 任务全部完成，GPU 资源已安全释放。"
+echo "[$(date)] ✅ GPU Released."
