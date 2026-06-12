@@ -140,6 +140,10 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     # agent.vlm_lora_path="/root/navsim_workspace/exps/0605_2b_negdrive_train_v1/last_lora/" \
 
 
+# TODO check GPU 
+tail -f /dev/null
+
+
 # ==========================================
 # release GPUs
 # ==========================================

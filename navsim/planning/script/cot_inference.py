@@ -28,6 +28,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from tqdm import tqdm
 
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 
 import torch
 from torch.utils.data import DataLoader
@@ -58,7 +61,8 @@ CONFIG_NAME = "default_run_pdm_score"
 
 
 
-def call_vllm_api(image_b64, 
+def call_vllm_api(session,
+                  image_b64, 
                   prompt,
                   model_name : str = "InternVL", 
                   max_tokens : int = 128,
@@ -67,34 +71,36 @@ def call_vllm_api(image_b64,
 
 
                   ):
+    
 
-    payload = {
-        "model": model_name,  
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
-                    {"type": "text", "text": prompt}
-                ]
-            }
-        ],
-        "max_tokens": max_tokens,
-        "temperature": temperature,  
-        "extra_body": {
-            "lora_request": {
-                "lora_name": lora_name,
-                "lora_path": lora_path
-            }
-        }
-    }
+
+    # payload = {
+    #     "model": model_name,  
+    #     "messages": [
+    #         {
+    #             "role": "user",
+    #             "content": [
+    #                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+    #                 {"type": "text", "text": prompt}
+    #             ]
+    #         }
+    #     ],
+    #     "max_tokens": max_tokens,
+    #     "temperature": temperature,  
+    #     "extra_body": {
+    #         "lora_request": {
+    #             "lora_name": lora_name,
+    #             "lora_path": lora_path
+    #         }
+    #     }
+    # }
     
     
-    response = requests.post(f"{api_url}/v1/chat/completions", json=payload, timeout=120)
-    response.raise_for_status()
-    return response.json()['choices'][0]['message']['content']
+    # response = requests.post(f"{api_url}/v1/chat/completions", json=payload, timeout=120)
+    # response.raise_for_status()
+    # return response.json()['choices'][0]['message']['content']
 
-
+    return
 
 
 
@@ -107,6 +113,7 @@ def inference_single_data_point(data_point,
                                 simulator,
                                 scorer, 
                                 agent,
+                                session,
 
                                 
                                 ):
@@ -128,7 +135,10 @@ def inference_single_data_point(data_point,
         requires_scene = False
         agent_input = scene_loader.get_agent_input_from_token(data_point)
 
-
+        
+        image64 = "im64"
+        prompt = "p"
+        call_vllm_api(session=session, image_b64=image64, prompt=prompt, )
 
 
         print("成功")
@@ -165,7 +175,14 @@ def inference_single_data_point(data_point,
 
 
 
-
+def build_session(retries=10, backoff=0.5):
+    s = requests.Session()
+    retry = Retry(total=retries, backoff_factor=backoff,
+                  status_forcelist=(429,500,502,503,504),
+                  allowed_methods=frozenset(["GET"]))  # safer: avoid POST retries
+    s.mount("https://", HTTPAdapter(max_retries=retry))
+    s.mount("http://", HTTPAdapter(max_retries=retry))
+    return s
 
 
 
@@ -241,6 +258,7 @@ def main(cfg: DictConfig) -> None:
     tokens_to_evaluate = tokens_to_evaluate[:35]
 
     final_results = []
+    session = build_session()
     with ThreadPoolExecutor(max_workers=cfg.max_workers) as executor:
         futures = {
             executor.submit(
@@ -248,6 +266,7 @@ def main(cfg: DictConfig) -> None:
                 data_point,
                 scene_loader, metric_cache_loader, simulator, scorer,
                 agent,
+                session
             ): data_point
             for data_point in tokens_to_evaluate
         }
@@ -260,6 +279,7 @@ def main(cfg: DictConfig) -> None:
                 token = futures.get(future, "<unknown>")
                 logger.warning(f"Future failed for token {token}:")
                 traceback.print_exc()
+    session.close()
     
 
 
