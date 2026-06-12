@@ -64,6 +64,7 @@ CONFIG_NAME = "default_run_pdm_score"
 def call_vllm_api(session,
                   image_b64, 
                   prompt,
+                  api_base: str = "http://localhost/8001",
                   model_name : str = "InternVL", 
                   max_tokens : int = 128,
                   temperature: float = 0.0,     # TODO 评估通常使用 greedy decoding (0.0) 或较低温度
@@ -72,28 +73,53 @@ def call_vllm_api(session,
 
                   ):
     
+    payload = {
+        "model": model_name,  
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    # {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+                    {"type": "text", "text": "Hello, Who are you"}
+                ]
+            }
+        ],
+        "max_tokens": max_tokens,
+        "temperature": temperature,  
+        # "extra_body": {
+        #     "lora_request": {
+        #         "lora_name": lora_name,
+        #         "lora_path": lora_path
+        #     }
+        # }
+    }
 
 
-    # payload = {
-    #     "model": model_name,  
-    #     "messages": [
-    #         {
-    #             "role": "user",
-    #             "content": [
-    #                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
-    #                 {"type": "text", "text": prompt}
-    #             ]
-    #         }
-    #     ],
-    #     "max_tokens": max_tokens,
-    #     "temperature": temperature,  
-    #     "extra_body": {
-    #         "lora_request": {
-    #             "lora_name": lora_name,
-    #             "lora_path": lora_path
-    #         }
-    #     }
-    # }
+
+
+    endpoints = ("/v1/generate", "/generate", "/v1/completions", "/completions", "/invoke", "/")
+
+
+
+
+    try:
+        for e in endpoints:
+            url = api_base + (e if e.startswith("/") else ("/" + e))
+
+
+            r = session.post(url, json=payload, timeout=120)
+
+            print("成功地址")
+            print(url)
+
+            print(r)
+
+
+
+    except Exception as e:
+        print(e)
+
+
     
     
     # response = requests.post(f"{api_url}/v1/chat/completions", json=payload, timeout=120)
@@ -123,6 +149,11 @@ def inference_single_data_point(data_point,
 
 
     """
+
+
+
+
+
     score_row: Dict[str, Any] = {"token": data_point, "valid": True}
 
 
