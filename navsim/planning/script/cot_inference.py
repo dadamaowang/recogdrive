@@ -9,6 +9,7 @@
 @Status  :   
 @Desc    :   多线程异步并发请求 vLLM inference, 单 GPU 
 '''
+
 import sys
 
 from typing import Any, Dict, List, Union, Tuple
@@ -21,9 +22,16 @@ import lzma
 import pickle
 import os
 import uuid
+from datetime import datetime
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import requests
+from tqdm import tqdm
+
+
 import torch
-from torch.utils.data import DataLoader, DistributedSampler
-import torch.distributed as dist
+from torch.utils.data import DataLoader
+
 import pickle
 import io
 import hydra
@@ -51,6 +59,37 @@ CONFIG_NAME = "default_run_pdm_score"
 
 
 
+def inference_single_data_point(data_point, 
+                                scene_loader,
+                                matric_cache_loader,
+                                simulator,
+                                scoreer, 
+                                agent,
+
+                                
+                                ):
+    """Inference single scene
+    
+    
+
+
+    """
+    score_row = {"token": data_point, "valid": True}
+
+    print(f"in thread,  ")
+
+    now = datetime.now()
+    d = {"d": now.strftime("%Y-%m-%d")}
+    score_row.update(asdict(d))
+
+
+
+    return score_row
+
+
+
+
+
 
 
 @hydra.main(config_path=CONFIG_PATH, config_name=CONFIG_NAME, version_base=None)
@@ -62,13 +101,23 @@ def main(cfg: DictConfig) -> None:
 
     build_logger(cfg)
 
+    # =====================================
+    # Prepare test data, simulator, agent
+    # =====================================
+    simulator: PDMSimulator = instantiate(cfg.simulator)
+    scorer: PDMScorer = instantiate(cfg.scorer)
+    assert (
+        simulator.proposal_sampling == scorer.proposal_sampling
+    ), "Simulator and scorer proposal sampling has to be identical"
+
+    metric_cache_loader = MetricCacheLoader(Path(cfg.metric_cache_path))
+
     scene_loader = SceneLoader(
         sensor_blobs_path=None,
         data_path=Path(cfg.navsim_log_path),
         scene_filter=instantiate(cfg.train_test_split.scene_filter),
         sensor_config=SensorConfig.build_no_sensors(),
     )
-    metric_cache_loader = MetricCacheLoader(Path(cfg.metric_cache_path))
     tokens_to_evaluate = list(set(scene_loader.tokens) & set(metric_cache_loader.tokens))
     tokens_to_evaluate = sorted(tokens_to_evaluate)  
     num_missing_metric_cache_tokens = len(set(scene_loader.tokens) - set(metric_cache_loader.tokens))
@@ -77,24 +126,136 @@ def main(cfg: DictConfig) -> None:
         logger.warning(f"Missing metric cache for {num_missing_metric_cache_tokens} tokens. Skipping these tokens.")
     if num_unused_metric_cache_tokens > 0:
         logger.warning(f"Unused metric cache for {num_unused_metric_cache_tokens} tokens. Skipping these tokens.")
-   
-   
-    sys.exit(0)
-
-
+    
     logger.info("Starting pdm scoring of %s scenarios...", str(len(tokens_to_evaluate)))
 
-    sampler = InferenceSampler(len(tokens_to_evaluate))
 
     data_points = []
-    for idx in sampler:
-        token = tokens_to_evaluate[idx]
+    for token in tokens_to_evaluate:
         log_file = scene_loader.token_to_log_file[token] 
         data_points.append({
             "cfg": cfg,
             "log_file": log_file,
             "tokens": [token],
         })
+    log_names = [a["log_file"] for a in data_points]
+    tokens = [t for a in data_points for t in a["tokens"]]
+
+    agent: AbstractAgent = instantiate(cfg.agent)
+
+    scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
+    scene_filter.log_names = log_names
+    scene_filter.tokens = tokens
+
+    scene_loader = SceneLoader(
+        sensor_blobs_path=Path(cfg.sensor_blobs_path),
+        data_path=Path(cfg.navsim_log_path),
+        scene_filter=scene_filter,
+        sensor_config=agent.get_sensor_config(),
+        load_image_path=True
+    )
+    tokens_to_evaluate = list(set(scene_loader.tokens) & set(metric_cache_loader.tokens))
+    tokens_to_evaluate = sorted(tokens_to_evaluate) 
+
+    print("TOKENS TO EVALUATE: %s", str(len(tokens_to_evaluate)))
+
+
+    # TODO debug
+    tokens_to_evaluate = tokens_to_evaluate[:35]
+
+    
+
+    final_results = []
+    with ThreadPoolExecutor(max_workers=cfg.max_workers) as executor:
+        futures = {
+            executor.submit(
+                inference_single_data_point,
+                data_point,
+                scene_loader, metric_cache_loader, simulator, scorer,
+                agent,
+            ): data_point
+            for data_point in tokens_to_evaluate
+        }
+
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Evaluating Scenes"):
+            try:
+                result = future.result()
+                final_results.append(result)
+            except Exception:
+                token = futures.get(future, "<unknown>")
+                logger.warning(f"Future failed for token {token}:")
+                traceback.print_exc()
+    
+
+    for d in final_results:
+        print(d)
+
+
+    
+    print("SUCCESS")
+    sys.exit(0)
+    
+
+
+
+    # 分发 data_points
+
+
+# def run_pdm_score(args: List[Dict[str, Union[List[str], DictConfig]]]) -> List[Dict[str, Any]]:
+
+
+#     pdm_results: List[Dict[str, Any]] = []
+#     for idx, (token) in enumerate(tokens_to_evaluate):
+#         if dist.get_rank() == 0:
+#             logger.info(f"Rank {dist.get_rank()} processing scenario {idx+1} / {len(tokens_to_evaluate)} in thread_id={thread_id}, node_id={node_id}")
+
+#         score_row: Dict[str, Any] = {"token": token, "valid": True}
+#         try:
+#             metric_cache_path = metric_cache_loader.metric_cache_paths[token]            
+#             with lzma.open(metric_cache_path, "rb") as f:
+#                 metric_cache: MetricCache = pickle.load(f)
+
+#             requires_scene = False
+#             agent_input = scene_loader.get_agent_input_from_token(token)
+#             if requires_scene:
+#                 raise NotImplementedError
+#                 # scene = scene_loader.get_scene_from_token(token)
+#                 # trajectory = agent.compute_trajectory(agent_input, scene)
+#             else:
+#                 """TODO customize 
+                
+#                 """
+#                 # trajectory = agent.compute_trajectory_recogdrive(agent_input)
+#                 trajectory = agent.compute_traj_cot(agent_input)
+                
+#             pdm_result = pdm_score(
+#                 metric_cache=metric_cache,
+#                 model_trajectory=trajectory,
+#                 future_sampling=simulator.proposal_sampling,
+#                 simulator=simulator,
+#                 scorer=scorer,
+#             )
+#             score_row.update(asdict(pdm_result))
+#             score_row['rank'] = dist.get_rank()
+#         except Exception as e:
+#             logger.warning(f"----------- Agent failed for token {token}:")
+#             traceback.print_exc()
+#             score_row["valid"] = False
+
+#         pdm_results.append(score_row)
+#     serialized_score_rows = pickle.dumps(pdm_results)
+#     return serialized_score_rows
+
+
+
+
+
+    # TODO: 并发请求 vLLM 服务
+
+
+
+    # TODO: 整理数据
+
 
     serialized_score_rows = run_pdm_score(data_points)
 

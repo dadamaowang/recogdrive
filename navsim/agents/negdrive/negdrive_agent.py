@@ -123,18 +123,22 @@ class NegDriveAgent(AbstractAgent):
         self.lora_alpha = lora_alpha
         self.lora_dropout = lora_dropout
 
-        self.vlm = NegDriveBackbone(    
-            model_type=self.vlm_type,
-            checkpoint_path=self.vlm_path,
-            vlm_lora_path=self.vlm_lora_path,
-            device=self.device,
-            max_padding_len=self.max_padding_len,
-            lora_r=self.lora_r,
-            lora_alpha=self.lora_alpha,
-            lora_dropout=self.lora_dropout,
-            mode=mode,
-        )
-        self.vlm = self.vlm.to(self.device)
+        if self.mode == "train":
+            self.vlm = NegDriveBackbone(    
+                model_type=self.vlm_type,
+                checkpoint_path=self.vlm_path,
+                vlm_lora_path=self.vlm_lora_path,
+                device=self.device,
+                max_padding_len=self.max_padding_len,
+                lora_r=self.lora_r,
+                lora_alpha=self.lora_alpha,
+                lora_dropout=self.lora_dropout,
+                mode=mode,
+            )
+            self.vlm = self.vlm.to(self.device)
+
+        elif self.mode == "eval":  # When eval , VLM and LoRA weight are served through vLLM. 
+            pass
 
 
         # -----------------------

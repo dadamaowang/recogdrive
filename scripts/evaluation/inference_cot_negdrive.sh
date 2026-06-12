@@ -27,7 +27,7 @@ VLLM_CMD=$(which vllm)
 echo "[$(date)] which vLLM : $VLLM_CMD"
 
 
-VLM_PATH="/root/navsim_workspace/models/ReCogDrive-VLM-2B/"
+VLM_PATH="/root/navsim_workspace/models/ReCogDrive-VLM-2B/"    # 记得检查 agent.diff_path 大小兼容
 
 
 nohup $VLLM_CMD serve $VLM_PATH \
@@ -37,6 +37,7 @@ nohup $VLLM_CMD serve $VLM_PATH \
     --dtype bfloat16 \
     --tokenizer $VLM_PATH \
     --tokenizer-mode auto \
+    --max-num-seqs 128 \
     --gpu-memory-utilization 0.90 \
     --port $PORT \
     --host 0.0.0.0 \
@@ -53,6 +54,7 @@ nohup $VLLM_CMD serve $VLM_PATH \
 #     --dtype bfloat16 \
 #     --tokenizer $VLM_PATH \
 #     --tokenizer-mode auto \
+#     --max-num-seqs 128 \
 #     --enable-lora \
 #     --max-lora-rank $MAX_LORA_RANK \
 #     --lora-modules neg_lora=$LORA_PATH \
@@ -112,13 +114,13 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     train_test_split=$TRAIN_TEST_SPLIT \
     experiment_name=$EXP_NAME \
     metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
+    force_cache_computation=false \
+    cache_path=null \
+    max_workers=8 \
     agent=negdrive_agent \
     agent.mode="eval" \
     agent.metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
-    cache_path=null \
-    force_cache_computation=false \
     agent.vlm_path="/root/navsim_workspace/models/ReCogDrive-VLM-2B" \
-    agent.mode="eval" \
     agent.vlm_size="small" \
     agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
     agent.dit_type="small" \
