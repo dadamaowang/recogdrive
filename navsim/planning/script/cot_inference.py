@@ -62,7 +62,7 @@ def call_vllm_api(image_b64,
                   prompt,
                   model_name : str = "InternVL", 
                   max_tokens : int = 128,
-                  temperature: float = 0.0,
+                  temperature: float = 0.0,     # TODO 评估通常使用 greedy decoding (0.0) 或较低温度
                   with_lora: bool = False,     # TODO with lora 
 
 
@@ -80,7 +80,7 @@ def call_vllm_api(image_b64,
             }
         ],
         "max_tokens": max_tokens,
-        "temperature": temperature,  # 评估通常使用 greedy decoding (0.0) 或较低温度
+        "temperature": temperature,  
         "extra_body": {
             "lora_request": {
                 "lora_name": lora_name,

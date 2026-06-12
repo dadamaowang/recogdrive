@@ -15,7 +15,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 
 TRAIN_TEST_SPLIT=navtest
-EXP_NAME=test_only_cot_witout_image_ori_2b_0609
+EXP_NAME=0612_test
 
 
 export MASTER_PORT=63669
@@ -48,12 +48,11 @@ torchrun \
     experiment_name=$EXP_NAME \
     metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
     agent=negdrive_agent \
-    agent.mode="eval" \
+    agent.mode="recogdrive_eval" \
     agent.metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
     cache_path=null \
     force_cache_computation=false \
     agent.vlm_path="/root/navsim_workspace/models/ReCogDrive-VLM-2B" \
-    agent.mode="eval" \
     agent.vlm_size="small" \
     agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
     agent.dit_type="small" \
