@@ -58,12 +58,54 @@ CONFIG_NAME = "default_run_pdm_score"
 
 
 
+def call_vllm_api(image_b64, 
+                  prompt,
+                  model_name : str = "InternVL", 
+                  max_tokens : int = 128,
+                  temperature: float = 0.0,
+                  with_lora: bool = False,     # TODO with lora 
+
+
+                  ):
+
+    payload = {
+        "model": model_name,  
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+                    {"type": "text", "text": prompt}
+                ]
+            }
+        ],
+        "max_tokens": max_tokens,
+        "temperature": temperature,  # 评估通常使用 greedy decoding (0.0) 或较低温度
+        "extra_body": {
+            "lora_request": {
+                "lora_name": lora_name,
+                "lora_path": lora_path
+            }
+        }
+    }
+    
+    
+    response = requests.post(f"{api_url}/v1/chat/completions", json=payload, timeout=120)
+    response.raise_for_status()
+    return response.json()['choices'][0]['message']['content']
+
+
+
+
+
+
+
 
 def inference_single_data_point(data_point, 
                                 scene_loader,
-                                matric_cache_loader,
+                                metric_cache_loader,
                                 simulator,
-                                scoreer, 
+                                scorer, 
                                 agent,
 
                                 
@@ -74,13 +116,48 @@ def inference_single_data_point(data_point,
 
 
     """
-    score_row = {"token": data_point, "valid": True}
+    score_row: Dict[str, Any] = {"token": data_point, "valid": True}
 
-    print(f"in thread,  ")
 
-    now = datetime.now()
-    d = {"d": now.strftime("%Y-%m-%d")}
-    score_row.update(asdict(d))
+
+    try:
+        metric_cache_path = metric_cache_loader.metric_cache_paths[data_point]            
+        with lzma.open(metric_cache_path, "rb") as f:
+            metric_cache: MetricCache = pickle.load(f)
+
+        requires_scene = False
+        agent_input = scene_loader.get_agent_input_from_token(data_point)
+
+
+
+
+        print("成功")
+
+        # # concurrent requests
+        # query = agent.prepare_for_vllm_service(agent_input)
+
+        
+
+
+
+
+            
+
+        # trajectory = agent.compute_traj_cot(agent_input)
+        # pdm_result = pdm_score(
+        #     metric_cache=metric_cache,
+        #     model_trajectory=trajectory,
+        #     future_sampling=simulator.proposal_sampling,
+        #     simulator=simulator,
+        #     scorer=scorer,
+        # )
+        # score_row.update(asdict(pdm_result))
+
+
+    except Exception as e:
+        logger.warning(f"----------- Agent failed for token {data_point}:")
+        traceback.print_exc()
+        score_row["valid"] = False
 
 
 
@@ -163,8 +240,6 @@ def main(cfg: DictConfig) -> None:
     # TODO debug
     tokens_to_evaluate = tokens_to_evaluate[:35]
 
-    
-
     final_results = []
     with ThreadPoolExecutor(max_workers=cfg.max_workers) as executor:
         futures = {
@@ -186,6 +261,9 @@ def main(cfg: DictConfig) -> None:
                 logger.warning(f"Future failed for token {token}:")
                 traceback.print_exc()
     
+
+
+
 
     for d in final_results:
         print(d)

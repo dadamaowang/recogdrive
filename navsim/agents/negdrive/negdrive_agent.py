@@ -47,7 +47,7 @@ class NegDriveAgent(AbstractAgent):
         *,
         trajectory_sampling: TrajectorySampling,    # for building targets 
         metric_cache_path: Optional[str] = None,    # for validation 
-        mode: Literal["train", "eval"] = "train",   # control certain behaviors (e.g. caching, rollout, etc.) based on mode
+        mode: str = "train",   # control certain behaviors (e.g. caching, rollout, etc.) based on mode
 
         # ========== VLM (POLICY) ==========
         vlm_path: str,
@@ -97,6 +97,8 @@ class NegDriveAgent(AbstractAgent):
         self.metric_cache_path = metric_cache_path
         self.device = device or f"cuda:{int(os.getenv('LOCAL_RANK', 0))}"
 
+        self.mode = mode
+
         """NOTE VLM + Diffusion Planner 
         (1) dit_type : main differenct: input_dim, output_dim 
             small : input_embedding_dim = 384
@@ -123,7 +125,10 @@ class NegDriveAgent(AbstractAgent):
         self.lora_alpha = lora_alpha
         self.lora_dropout = lora_dropout
 
-        if self.mode == "train":
+        if self.mode == "train" or self.mode == "recogdrive_eval":
+
+            mode = "train" if self.mode == "train" else "eval"
+
             self.vlm = NegDriveBackbone(    
                 model_type=self.vlm_type,
                 checkpoint_path=self.vlm_path,
@@ -137,8 +142,13 @@ class NegDriveAgent(AbstractAgent):
             )
             self.vlm = self.vlm.to(self.device)
 
+
         elif self.mode == "eval":  # When eval , VLM and LoRA weight are served through vLLM. 
+            
             pass
+
+
+
 
 
         # -----------------------

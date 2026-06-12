@@ -1,3 +1,7 @@
+# NOTICE:
+# 1. 提交选择 2 GPU
+# VLM_PATH 和 Diff_PATH 尺寸参数一致
+
 
 nvidia-smi
 
@@ -7,7 +11,10 @@ source ~/.bashrc
 VLLM_ENV_NAME="serve_vllm"    
 CLIENT_ENV_NAME="nd"  
 
-EXP_NAME="8B_ori_inference"
+VLLM_GPU=0
+CLIENT_GPU=1
+
+EXP_NAME="debug_0612_inf_cot"
 
 
 # ------------------------
@@ -22,7 +29,7 @@ echo "[$(date)] vLLM Inference Service: $API_URL"
 echo "[$(date)] Activate $VLLM_ENV_NAME and start..."
 conda activate $VLLM_ENV_NAME
 
-
+export CUDA_VISIBLE_DEVICES=$VLLM_GPU
 VLLM_CMD=$(which vllm)
 echo "[$(date)] which vLLM : $VLLM_CMD"
 
@@ -65,9 +72,8 @@ nohup $VLLM_CMD serve $VLM_PATH \
 
 
 
-
 VLLM_PID=$!
-echo "[$(date)] vLLM service is launched: $VLLM_PID"
+echo "[$(date)] vLLM service is launched: $VLLM_PID on GPU: $VLLM_GPU"
 
 echo "[$(date)] wait vLLM initialize..."
 MAX_RETRIES=120
@@ -96,6 +102,7 @@ done
 # ------------------------
 echo "[$(date)] switch to $CLIENT_ENV_NAME environment..."
 conda activate $CLIENT_ENV_NAME
+export CUDA_VISIBLE_DEVICES=$CLIENT_GPU
 
 
 export NAVSIM_EXP_ROOT="/root/navsim_workspace/exps"    
@@ -107,16 +114,14 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 
 TRAIN_TEST_SPLIT=navtest
-EXP_NAME=debug_vllm_inf_cot
-
-
 python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     train_test_split=$TRAIN_TEST_SPLIT \
     experiment_name=$EXP_NAME \
     metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
     force_cache_computation=false \
     cache_path=null \
-    max_workers=8 \
+    +max_workers=24 \
+    +api_uri=$API_URL \
     agent=negdrive_agent \
     agent.mode="eval" \
     agent.metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
@@ -133,8 +138,6 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     agent.opt_weight_decay=0.01 \
     agent.opt_eps=1e-8 \
     # agent.vlm_lora_path="/root/navsim_workspace/exps/0605_2b_negdrive_train_v1/last_lora/" \
-
-
 
 
 # ==========================================

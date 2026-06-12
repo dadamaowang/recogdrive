@@ -158,8 +158,8 @@ def run_pdm_score(args: List[Dict[str, Union[List[str], DictConfig]]]) -> List[D
                 """TODO customize 
                 
                 """
-                # trajectory = agent.compute_trajectory_recogdrive(agent_input)
-                trajectory = agent.compute_traj_cot(agent_input)
+                trajectory = agent.compute_trajectory_recogdrive(agent_input)
+                # trajectory = agent.compute_traj_cot(agent_input)
                 
             pdm_result = pdm_score(
                 metric_cache=metric_cache,
