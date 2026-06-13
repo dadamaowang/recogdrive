@@ -40,7 +40,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 # export CACHE_PATH=null
 
 TRAIN_TEST_SPLIT=navtrain   
-EXP_NAME=0610_tmp
+EXP_NAME=0613_yrs_NSR-train
 FAST_DEV_RUN=false
 
 MASTER_PORT=63669

@@ -206,7 +206,7 @@ def main(cfg: DictConfig) -> None:
 
     wandb_config = OmegaConf.to_container(cfg, resolve=True) if "OmegaConf" in globals() else dict(cfg)
     wandb_logger = WandbLogger(
-        project="negdrive_training_pro01",
+        project="negdrive_training_pro02",
         name=cfg.experiment_name,
         config=wandb_config,
         save_dir=cfg.output_dir,

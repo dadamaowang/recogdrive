@@ -142,48 +142,32 @@ def inference_single_data_point(data_point,
     """
 
 
-
-
-
     score_row: Dict[str, Any] = {"token": data_point, "valid": True}
-
-
 
     try:
         metric_cache_path = metric_cache_loader.metric_cache_paths[data_point]            
         with lzma.open(metric_cache_path, "rb") as f:
             metric_cache: MetricCache = pickle.load(f)
 
-
         agent_input = scene_loader.get_agent_input_from_token(data_point)
 
+        vllm_input = agent.unpack_features_for_vllm_service(agent_input)
+
+
+
+
+        # image64 = "im64"
+        # prompt = "请介绍你的方法"
+
+        # vllm_output = call_vllm_api(session=session, 
+        #                      image_b64=image64, prompt=prompt, 
+        #                      api_base=api_base,
+        #                      model_name=agent.vlm_path)
         
 
-
-        image64 = "im64"
-        prompt = "p"
-
-        text = call_vllm_api(session=session, 
-                             image_b64=image64, prompt=prompt, 
-                             api_base=api_base,
-                             model_name=agent.vlm_path)
+        # trajectory = agent.compute_traj_cot(agent_input, cot_text)
 
 
-
-
-        print("返回")
-
-        # # concurrent requests
-        # query = agent.prepare_for_vllm_service(agent_input)
-
-        
-
-
-
-
-            
-
-        # trajectory = agent.compute_traj_cot(agent_input)
         # pdm_result = pdm_score(
         #     metric_cache=metric_cache,
         #     model_trajectory=trajectory,
