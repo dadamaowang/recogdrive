@@ -14,7 +14,7 @@ CLIENT_ENV_NAME="nd"
 VLLM_GPU=0
 CLIENT_GPU=1
 
-EXP_NAME="debug_0612_inf_cot"
+EXP_NAME="debug_0613_inf_cot"
 
 
 # ------------------------
@@ -121,11 +121,11 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     force_cache_computation=false \
     cache_path=null \
     +max_workers=24 \
-    +api_uri=$API_URL \
+    +api_base=$API_URL \
     agent=negdrive_agent \
     agent.mode="eval" \
     agent.metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
-    agent.vlm_path="/root/navsim_workspace/models/ReCogDrive-VLM-2B" \
+    agent.vlm_path=$VLM_PATH \
     agent.vlm_size="small" \
     agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
     agent.dit_type="small" \
@@ -138,10 +138,6 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     agent.opt_weight_decay=0.01 \
     agent.opt_eps=1e-8 \
     # agent.vlm_lora_path="/root/navsim_workspace/exps/0605_2b_negdrive_train_v1/last_lora/" \
-
-
-# TODO check GPU 
-tail -f /dev/null
 
 
 # ==========================================

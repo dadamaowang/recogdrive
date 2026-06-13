@@ -7,7 +7,9 @@
 @Contact :   feimaoxiaotianshi@outlook.com
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
 @Status  :   
-@Desc    :   多线程异步并发请求 vLLM inference, 单 GPU 
+@Desc    :   
+    多线程异步并发请求 vLLM inference;
+    启动脚本 recogdrive/scripts/evaluation/inference_cot_negdrive.sh
 '''
 
 import sys
@@ -64,7 +66,7 @@ CONFIG_NAME = "default_run_pdm_score"
 def call_vllm_api(session,
                   image_b64, 
                   prompt,
-                  api_base: str = "http://localhost/8001",
+                  api_base: str = "http://localhost:8001",
                   model_name : str = "InternVL", 
                   max_tokens : int = 128,
                   temperature: float = 0.0,     # TODO 评估通常使用 greedy decoding (0.0) 或较低温度
@@ -72,6 +74,8 @@ def call_vllm_api(session,
 
 
                   ):
+    
+    url = f"{api_base}/v1/chat/completions"  # TODO 
     
     payload = {
         "model": model_name,  
@@ -95,38 +99,27 @@ def call_vllm_api(session,
     }
 
 
-
-
-    endpoints = ("/v1/generate", "/generate", "/v1/completions", "/completions", "/invoke", "/")
-
-
-
-
     try:
-        for e in endpoints:
-            url = api_base + (e if e.startswith("/") else ("/" + e))
+   
+        r = session.post(url, json=payload, timeout=120)
 
+        r.raise_for_status()
 
-            r = session.post(url, json=payload, timeout=120)
+        result = r.json()
 
-            print("成功地址")
-            print(url)
+        text = result["choices"][0]["message"]["content"]
 
-            print(r)
+        print(f'成功, Response：{text}')
 
-
+        return text
 
     except Exception as e:
-        print(e)
+        print("vLLM call failed:", e)
+        if 'r' in locals():
+            print("Response:", r.text)
+        return None
 
 
-    
-    
-    # response = requests.post(f"{api_url}/v1/chat/completions", json=payload, timeout=120)
-    # response.raise_for_status()
-    # return response.json()['choices'][0]['message']['content']
-
-    return
 
 
 
@@ -140,14 +133,12 @@ def inference_single_data_point(data_point,
                                 scorer, 
                                 agent,
                                 session,
+                                api_base,
 
                                 
                                 ):
     """Inference single scene
     
-    
-
-
     """
 
 
@@ -163,16 +154,24 @@ def inference_single_data_point(data_point,
         with lzma.open(metric_cache_path, "rb") as f:
             metric_cache: MetricCache = pickle.load(f)
 
-        requires_scene = False
+
         agent_input = scene_loader.get_agent_input_from_token(data_point)
 
         
+
+
         image64 = "im64"
         prompt = "p"
-        call_vllm_api(session=session, image_b64=image64, prompt=prompt, )
+
+        text = call_vllm_api(session=session, 
+                             image_b64=image64, prompt=prompt, 
+                             api_base=api_base,
+                             model_name=agent.vlm_path)
 
 
-        print("成功")
+
+
+        print("返回")
 
         # # concurrent requests
         # query = agent.prepare_for_vllm_service(agent_input)
@@ -285,7 +284,7 @@ def main(cfg: DictConfig) -> None:
     print("TOKENS TO EVALUATE: %s", str(len(tokens_to_evaluate)))
 
 
-    # TODO debug
+    # TODO 
     tokens_to_evaluate = tokens_to_evaluate[:35]
 
     final_results = []
@@ -297,7 +296,8 @@ def main(cfg: DictConfig) -> None:
                 data_point,
                 scene_loader, metric_cache_loader, simulator, scorer,
                 agent,
-                session
+                session,
+                cfg.api_base
             ): data_point
             for data_point in tokens_to_evaluate
         }
@@ -313,7 +313,7 @@ def main(cfg: DictConfig) -> None:
     session.close()
     
 
-
+    print("返回结果汇总：")
 
 
     for d in final_results:
