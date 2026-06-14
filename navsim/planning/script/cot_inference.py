@@ -85,9 +85,6 @@ def call_vllm_api(session,
     ],
     
     """
-
-
-    
     url = f"{api_base}/v1/chat/completions"  # TODO 
     
     payload = {
@@ -105,14 +102,13 @@ def call_vllm_api(session,
 
 
     try:
-
         r = session.post(url, json=payload, timeout=120)
         r.raise_for_status()
 
         result = r.json()
         text = result["choices"][0]["message"]["content"]
-        
-        print(f'成功, Response：{text}')
+
+        print(f'CoT Response：{text}')
 
         return text
 
@@ -136,9 +132,8 @@ def inference_single_data_point(data_point,
                                 scorer, 
                                 agent,
                                 session,
-                                api_base,
+                                cfg,
 
-                                
                                 ):
     """Inference single scene
     
@@ -162,8 +157,11 @@ def inference_single_data_point(data_point,
         vllm_output = call_vllm_api(
                              session=session, 
                              vllm_input_messages=vllm_input_messages,
-                             api_base=api_base,
-                             model_name=agent.vlm_path)
+                             api_base=cfg.api_base,
+                             model_name=agent.vlm_path,
+                             max_tokens=cfg.max_cot_tokens,
+                             temperature=cfg.temperature
+                             )
         
 
         # trajectory = agent.compute_traj_cot(agent_input, cot_text)
@@ -190,13 +188,13 @@ def inference_single_data_point(data_point,
 
 
 
-def build_session(retries=10, backoff=0.5):
+def build_session(retries=3, backoff=0.5):
     s = requests.Session()
     retry = Retry(total=retries, backoff_factor=backoff,
                   status_forcelist=(429,500,502,503,504),
                   allowed_methods=frozenset(["GET"]))  # safer: avoid POST retries
-    s.mount("https://", HTTPAdapter(max_retries=retry))
-    s.mount("http://", HTTPAdapter(max_retries=retry))
+    s.mount("https://", HTTPAdapter(max_retries=retry, pool_connections=10, pool_maxsize=100))
+    s.mount("http://", HTTPAdapter(max_retries=retry, pool_maxsize=10, pool_maxsize=100))
     return s
 
 
@@ -282,7 +280,8 @@ def main(cfg: DictConfig) -> None:
                 scene_loader, metric_cache_loader, simulator, scorer,
                 agent,
                 session,
-                cfg.api_base
+                cfg
+
             ): data_point
             for data_point in tokens_to_evaluate
         }

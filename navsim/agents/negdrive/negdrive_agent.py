@@ -791,14 +791,20 @@ class NegDriveAgent(AbstractAgent):
             return None
             
         vllm_input_messages = [
-            { "role": "user", "content": [text_content, image_content]}
+            {"role": "system", "content": [{"type": "text", "text": self.vlm.model.system_message}]},
+            {"role": "user", "content": [text_content, image_content]}
 
         ]
-
 
         # payload = {
         #     "model": model_name,  
         #     "messages": [
+        #         {
+        #             "role": "system",
+        #             "content": [
+        #                 {"type": "text", "text": "Hello, Who are you"}
+        #             ]
+        #         }
         #         {
         #             "role": "user",
         #             "content": [

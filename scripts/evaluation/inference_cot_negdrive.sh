@@ -122,6 +122,8 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     cache_path=null \
     +max_workers=24 \
     +api_base=$API_URL \
+    +max_cot_tokens=512 \
+    +temperature=0.0 \
     agent=negdrive_agent \
     agent.mode="eval" \
     agent.metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
