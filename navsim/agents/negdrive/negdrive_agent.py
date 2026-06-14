@@ -623,14 +623,8 @@ class NegDriveAgent(AbstractAgent):
                 if last_hidden_states.ndim == 2: 
                     last_hidden_states = last_hidden_states.unsqueeze(0)
 
-                if self.pass_cot_token_only:
-                    resp_start = gen_output.response_start_idx
-                    last_hidden_states = last_hidden_states[:, resp_start:, :]
-
-                del fwd_output, gen_output
 
             predictions = self.action_head.get_action(last_hidden_states.to(diff_dtype), diff_input)
-
             poses = predictions["pred_traj"].float().cpu().squeeze(0)
         
         return Trajectory(poses)   

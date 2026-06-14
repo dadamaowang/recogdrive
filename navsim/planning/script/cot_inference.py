@@ -118,12 +118,6 @@ def call_vllm_api(session,
         return None
 
 
-
-
-
-
-
-
 def inference_single_data_point(data_point, 
                                 scene_loader,
                                 metric_cache_loader,
@@ -177,8 +171,6 @@ def inference_single_data_point(data_point,
         logger.warning(f"----------- Agent failed for token {data_point}:")
         traceback.print_exc()
         score_row["valid"] = False
-
-
 
     return score_row
 
@@ -281,7 +273,6 @@ def main(cfg: DictConfig) -> None:
             ): data_point
             for data_point in tokens_to_evaluate
         }
-
         for future in tqdm(as_completed(futures), total=len(futures), desc="Evaluating Scenes"):
             try:
                 result = future.result()
@@ -292,81 +283,29 @@ def main(cfg: DictConfig) -> None:
                 traceback.print_exc()
     session.close()
     
+    pdm_score_df = pd.DataFrame(final_results)
 
-    print("返回结果汇总：")
+    num_sucessful_scenarios = pdm_score_df["valid"].sum()
+    num_failed_scenarios = len(pdm_score_df) - num_sucessful_scenarios
+    average_row = pdm_score_df.drop(columns=["token", "valid",'rank']).mean(skipna=True)
+    average_row["token"] = "average"
+    average_row["valid"] = pdm_score_df["valid"].all()
+    average_row["rank"] = "0"
+    pdm_score_df.loc[len(pdm_score_df)] = average_row
 
+    save_path = Path(cfg.output_dir)
+    timestamp = datetime.now().strftime("%Y.%m.%d.%H.%M.%S")
+    pdm_score_df.to_csv(save_path / f"{timestamp}.csv")
 
-    for d in final_results:
-        print(d)
-
-
-    
-    print("SUCCESS")
-    sys.exit(0)
-    
-
-    # TODO: 整理数据
-
-
-    # serialized_score_rows = run_pdm_score(data_points)
-
-    # device = torch.device("cpu" if not torch.cuda.is_available() else "cuda")
-
-    # serialized_tensor = torch.ByteTensor(list(serialized_score_rows)).to(device)
-
-    # local_size = len(serialized_tensor)
-    # size_list = [torch.tensor(local_size).to(device) for _ in range(dist.get_world_size())]
-    # dist.all_gather(size_list, torch.tensor(local_size).to(device))
-
-    # max_size = max(size_list).item() 
-
-    # if local_size < max_size:
-    #     padded_tensor = torch.cat([serialized_tensor, torch.zeros(max_size - local_size, dtype=torch.uint8).to(device)])
-    # else:
-    #     padded_tensor = serialized_tensor
-
-    # gathered_results = [torch.empty_like(padded_tensor) for _ in range(dist.get_world_size())]
-    # dist.all_gather(gathered_results, padded_tensor)
-
-    # if local_size < max_size:
-    #     padded_tensor = torch.cat([serialized_tensor, torch.zeros(max_size - local_size, dtype=torch.uint8).to(device)])
-    # else:
-    #     padded_tensor = serialized_tensor
-
-    # gathered_results = [torch.empty_like(padded_tensor) for _ in range(dist.get_world_size())]
-    # dist.all_gather(gathered_results, padded_tensor)
-
-    # if dist.get_rank() == 0:
-    #     final_results = []
-    #     for gathered_tensor in gathered_results:
-    #         gathered_tensor = gathered_tensor[:local_size]  
-    #         serialized_data = gathered_tensor.cpu().numpy().tobytes()
-    #         final_results.extend(pickle.loads(serialized_data))  # 
-    
-    #     pdm_score_df = pd.DataFrame(final_results)
-
-    #     num_sucessful_scenarios = pdm_score_df["valid"].sum()
-    #     num_failed_scenarios = len(pdm_score_df) - num_sucessful_scenarios
-    #     average_row = pdm_score_df.drop(columns=["token", "valid",'rank']).mean(skipna=True)
-    #     average_row["token"] = "average"
-    #     average_row["valid"] = pdm_score_df["valid"].all()
-    #     average_row["rank"] = "0"
-    #     pdm_score_df.loc[len(pdm_score_df)] = average_row
-
-    #     save_path = Path(cfg.output_dir)
-    #     timestamp = datetime.now().strftime("%Y.%m.%d.%H.%M.%S")
-    #     pdm_score_df.to_csv(save_path / f"{timestamp}.csv")
-
-    #     logger.info(
-    #         f"""
-    #         Finished running evaluation.
-    #             Number of successful scenarios: {num_sucessful_scenarios}.
-    #             Number of failed scenarios: {num_failed_scenarios}.
-    #             Final average score of valid results: {pdm_score_df['score'].mean()}.
-    #             Results are stored in: {save_path / f"{timestamp}.csv"}.
-    #         """
-    #     )
-
+    logger.info(
+        f"""
+        Finished running evaluation.
+            Number of successful scenarios: {num_sucessful_scenarios}.
+            Number of failed scenarios: {num_failed_scenarios}.
+            Final average score of valid results: {pdm_score_df['score'].mean()}.
+            Results are stored in: {save_path / f"{timestamp}.csv"}.
+        """
+    )
 
 
 if __name__ == "__main__":
