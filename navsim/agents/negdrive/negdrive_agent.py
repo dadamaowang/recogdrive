@@ -574,8 +574,11 @@ class NegDriveAgent(AbstractAgent):
         # return Trajectory(poses)    
 
     
-    def compute_traj_cot(self, agent_input: AgentInput) -> Trajectory:
-        """TODO w/o image tokens 设置
+    def compute_traj_cot(self, agent_input: AgentInput, cot_text:str) -> Trajectory:
+        """
+        NOTE 给 diffusion planner 的 last_hidden_states 不包括 prompt 
+        
+        TODO w/o image tokens 设置
         
         """
         self.eval()
@@ -593,64 +596,27 @@ class NegDriveAgent(AbstractAgent):
         with torch.no_grad():
             with torch.autocast("cuda", dtype=torch.bfloat16):
 
-                gen_output = self.vlm.generate_text_actions(
-                    pixel_values_cat, 
-                    questions, 
-                    num_patches_list=num_patches_list,
-                    max_new_tokens=self.max_text_tokens
-                )
-                fwd_output = self.vlm.forward_with_ids(
-                        pixel_values_cat,
-                        gen_output.full_ids,
-                        gen_output.attention_mask
-                    )
-
-                last_hidden_states = fwd_output.hidden_states[-1].clone()
-                if last_hidden_states.ndim == 2: 
-                    last_hidden_states = last_hidden_states.unsqueeze(0)
-
+                
                 if self.pass_cot_token_only:
-                    resp_start = gen_output.response_start_idx
-                    last_hidden_states = last_hidden_states[:, resp_start:, :]
+                    model_inputs = self.vlm.tokenizer(
+                        [cot_text],
+                        return_tensors="pt",
+                        padding=True,
+                        truncation=True,
+                        max_length=self.vlm.max_padding_len
+                    )
+                    input_ids = model_inputs["input_ids"].cuda()
+                    attention_mask = model_inputs["attention_mask"].cuda()
+                    fwd_output = self.vlm.forward_cot_only(
+                        input_ids, attention_mask
+                    )
+                else:
+                    # TODO 
 
-                del fwd_output, gen_output
 
-            predictions = self.action_head.get_action(last_hidden_states.to(diff_dtype), diff_input)
-
-            poses = predictions["pred_traj"].float().cpu().squeeze(0)
-        
-        return Trajectory(poses)   
-
-
-    def compute_traj_cot(self, agent_input: AgentInput) -> Trajectory:
-        """TODO w/o image tokens 设置
-        
-        """
-        self.eval()
-
-        features: Dict[str, torch.Tensor] = {}
-        # build features
-        for builder in self.get_feature_builders():    
-            features.update(builder.compute_features(agent_input))
-        # add batch dimension
-        features = {k: v.unsqueeze(0) for k, v in features.items()}
-
-        pixel_values_cat, questions, num_patches_list, history_trajectory = self.unpack_features_cot_prompt(features)
-        diff_dtype, diff_input = self.get_diff_input(features, history_trajectory)
-
-        with torch.no_grad():
-            with torch.autocast("cuda", dtype=torch.bfloat16):
-
-                gen_output = self.vlm.generate_text_actions(
-                    pixel_values_cat, 
-                    questions, 
-                    num_patches_list=num_patches_list,
-                    max_new_tokens=self.max_text_tokens
-                )
-                fwd_output = self.vlm.forward_with_ids(
-                        pixel_values_cat,
-                        gen_output.full_ids,
-                        gen_output.attention_mask
+                    fwd_output = self.vlm.forward_with_ids(
+                            pixel_values_cat,
+                            input_ids, attention_mask
                     )
 
                 last_hidden_states = fwd_output.hidden_states[-1].clone()

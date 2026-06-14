@@ -1,6 +1,7 @@
 # NOTICE:
 # 1. 提交选择 2 GPU
 # VLM_PATH 和 Diff_PATH 尺寸参数一致
+# prompt 修改： /root/recogdrive/navsim/agents/negdrive/negdrive_agent.py/unpack_features_for_vllm_service
 
 
 nvidia-smi
@@ -14,7 +15,7 @@ CLIENT_ENV_NAME="nd"
 VLLM_GPU=0
 CLIENT_GPU=1
 
-EXP_NAME="debug_0614_inf_cot"
+EXP_NAME="debug_0614_inf_cot_04"
 
 
 # ------------------------
@@ -122,16 +123,15 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     cache_path=null \
     +max_workers=24 \
     +api_base=$API_URL \
-    +max_cot_tokens=512 \
     +temperature=0.0 \
     agent=negdrive_agent \
     agent.mode="eval" \
+    agent.pass_cot_token_only=true \
     agent.metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
     agent.vlm_path=$VLM_PATH \
     agent.vlm_size="small" \
     agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
     agent.dit_type="small" \
-    agent.pass_cot_token_only=true \
     agent.per_sample_rollout=4 \
     agent.bag_g=4 \
     agent.max_text_tokens=512 \
