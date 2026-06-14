@@ -14,7 +14,7 @@ CLIENT_ENV_NAME="nd"
 VLLM_GPU=0
 CLIENT_GPU=1
 
-EXP_NAME="debug_0613_inf_cot"
+EXP_NAME="debug_0614_inf_cot"
 
 
 # ------------------------

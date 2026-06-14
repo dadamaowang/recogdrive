@@ -790,17 +790,35 @@ class NegDriveAgent(AbstractAgent):
             image_content = None
             return None
             
-        payload = {
-            "model": self.vlm_path,
-            "messages": [
-                text_content,
-                image_content,
-            ],
-            "max_tokens": int(self.max_text_tokens),
-            "temperature": 0.0,
-        }
+        vllm_input_messages = [
+            { "role": "user", "content": [text_content, image_content]}
 
-        return payload
+        ]
+
+
+        # payload = {
+        #     "model": model_name,  
+        #     "messages": [
+        #         {
+        #             "role": "user",
+        #             "content": [
+        #                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+        #                 {"type": "text", "text": "Hello, Who are you"}
+        #             ]
+        #         }
+        #     ],
+        #     "max_tokens": max_tokens,
+        #     "temperature": temperature,  
+        #     # "extra_body": {
+        #     #     "lora_request": {
+        #     #         "lora_name": lora_name,
+        #     #         "lora_path": lora_path
+        #     #     }
+        #     # }
+        # }
+
+
+        return vllm_input_messages
 
 
 
