@@ -28,8 +28,13 @@ from navsim.common.dataclasses import AgentInput, SensorConfig, Trajectory
 from navsim.planning.training.abstract_feature_target_builder import AbstractFeatureBuilder, AbstractTargetBuilder
 from nuplan.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
 
-from .utils.internvl_preprocess import load_image 
+
+from PIL import Image
 import base64
+import io
+
+from .utils.internvl_preprocess import load_image 
+
 from .utils.lr_scheduler import WarmupCosLR
 from .utils.utils import format_number, build_from_configs
 
@@ -708,90 +713,94 @@ class NegDriveAgent(AbstractAgent):
         command_indices = torch.argmax(high_command_one_hot, dim=-1)
         command_str_list = [navigation_commands[idx.item()] for idx in command_indices]
 
-        # Build per-sample prompts and corresponding HTTP payloads compatible
-        # with the online vLLM chat/completions API (InternVL).
-        payloads = []
-        batch_size = high_command_one_hot.shape[0]
-        for i in range(batch_size):
+        """
+        Build per-sample prompts and corresponding HTTP payloads compatible
+        with the online vLLM chat/completions API (InternVL).
+        batch_size == 1
+        
+        """            
+        # =========================
+        # prepare text 
+        # =========================   
+
+        history_trajectory_sample = history_trajectory[0]
+        command_str_sample = command_str_list[0]
+
+        history_str = ' '.join([
+            f'   - t-{3-j}: ({format_number(history_trajectory_sample[j, 0].item())}, '
+            f'{format_number(history_trajectory_sample[j, 1].item())}, '
+            f'{format_number(history_trajectory_sample[j, 2].item())})'
+            for j in range(history_trajectory_sample.shape[0])
+        ])
+
+        reasoning_framework = (
+            "Before providing the trajectory, follow this hierarchical cognitive process:\n"
+            "1. Foundational Perception: describe critical static and dynamic elements (traffic lights, vehicles, obstacles).\n"
+            "2. Dynamic Understanding: analyze movement and intent of surrounding agents relative to your path.\n"
+            "3. Planning & Reasoning: formulate your high-level strategy and explain the causal reason for your decision.\n"
+            "4. Advanced Reasoning: briefly consider a counterfactual to ensure safety margins.\n"
+        )
+
+        prompt = (
+            "You are an advanced autonomous driving cognitive agent. Based on the provided front camera view, "
+            "historical context, and navigation command, perform a step-by-step reasoning analysis followed by trajectory planning.\n\n"
+            "Inputs:\n"
+            f"- Historical motion (last 4 timesteps): {history_str}\n"
+            f"- Navigation target: [{command_str_sample.upper()}]\n\n"
+            "Instructions:\n"
+            f"{reasoning_framework}"
+        )
+
+        output_requirements = (
+            "Output Format:\n"
+            "1) Reasoning Trace: a concise paragraph with the 4-level analysis.\n"
+            "2) Trajectory: predict 8 future waypoints encapsulated in [PT, ...].\n"
+            "   - Each point: (x:float, y:float, heading:float)\n"
+            "   - Maintain 2 decimal places of precision.\n"
+        )
+
+        full_text = f"{prompt}\n{output_requirements}"
+        text_content = {"type": "text", "text": full_text}
+
+
+        # =========================
+        # prepare image
+        # =========================
+
+        # Encode the corresponding front camera image as data URI (base64)
+        try:
+            img_path = image_paths[0]
+            with open(img_path, "rb") as f:
+                img = Image.open(f)
+                # img_resized = img.resize((960, 540))  # TODO inf时降低分辨率试试？
+                img_resized = img
+
+                buffer = io.BytesIO()
+                img_resized.save(buffer, format="JPEG")
+                buffer.seek(0)
+
+                img_b64 = base64.b64encode(buffer.read()).decode("utf-8")
+
+            image_content = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
+
+
+        except Exception:
+            # fallback to omit image if encoding fails
+            print(f"图像加载失败！图像路径：{img_path}")
+            image_content = None
+            return None
             
-            # =========================
-            # prepare text 
-            # =========================   
+        payload = {
+            "model": self.vlm_path,
+            "messages": [
+                text_content,
+                image_content,
+            ],
+            "max_tokens": int(self.max_text_tokens),
+            "temperature": 0.0,
+        }
 
-            history_trajectory_sample = history_trajectory[i]
-            command_str_sample = command_str_list[i]
-
-            history_str = ' '.join([
-                f'   - t-{3-j}: ({format_number(history_trajectory_sample[j, 0].item())}, '
-                f'{format_number(history_trajectory_sample[j, 1].item())}, '
-                f'{format_number(history_trajectory_sample[j, 2].item())})'
-                for j in range(history_trajectory_sample.shape[0])
-            ])
-
-            reasoning_framework = (
-                "Before providing the trajectory, follow this hierarchical cognitive process:\n"
-                "1. Foundational Perception: describe critical static and dynamic elements (traffic lights, vehicles, obstacles).\n"
-                "2. Dynamic Understanding: analyze movement and intent of surrounding agents relative to your path.\n"
-                "3. Planning & Reasoning: formulate your high-level strategy and explain the causal reason for your decision.\n"
-                "4. Advanced Reasoning: briefly consider a counterfactual to ensure safety margins.\n"
-            )
-
-            prompt = (
-                "You are an advanced autonomous driving cognitive agent. Based on the provided front camera view, "
-                "historical context, and navigation command, perform a step-by-step reasoning analysis followed by trajectory planning.\n\n"
-                "Inputs:\n"
-                f"- Historical motion (last 4 timesteps): {history_str}\n"
-                f"- Navigation target: [{command_str_sample.upper()}]\n\n"
-                "Instructions:\n"
-                f"{reasoning_framework}"
-            )
-
-            output_requirements = (
-                "Output Format:\n"
-                "1) Reasoning Trace: a concise paragraph with the 4-level analysis.\n"
-                "2) Trajectory: predict 8 future waypoints encapsulated in [PT, ...].\n"
-                "   - Each point: (x:float, y:float, heading:float)\n"
-                "   - Maintain 2 decimal places of precision.\n"
-            )
-
-            full_text = f"{prompt}\n{output_requirements}"
-
-
-            # =========================
-            # prepare image
-            # =========================
-
-            # Encode the corresponding front camera image as data URI (base64)
-            img_path = image_paths[i] if i < len(image_paths) else image_paths[0]
-            try:
-                with open(img_path, "rb") as f:
-                    img_b64 = base64.b64encode(f.read()).decode("utf-8")
-                image_content = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
-            except Exception:
-                # fallback to omit image if encoding fails
-                print("图像加载失败！")
-                image_content = None
-
-            message_content = []
-            if image_content is not None:
-                message_content.append(image_content)
-            message_content.append({"type": "text", "text": full_text})
-
-            payload = {
-                "model": "InternVL",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": message_content,
-                    }
-                ],
-                "max_tokens": int(self.max_text_tokens),
-                "temperature": 0.0,
-            }
-
-            payloads.append(payload)
-
-        return payloads
+        return payload
 
 
 

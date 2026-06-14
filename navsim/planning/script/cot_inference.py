@@ -66,6 +66,7 @@ CONFIG_NAME = "default_run_pdm_score"
 def call_vllm_api(session,
                   image_b64, 
                   prompt,
+                  payload,
                   api_base: str = "http://localhost:8001",
                   model_name : str = "InternVL", 
                   max_tokens : int = 128,
@@ -77,26 +78,27 @@ def call_vllm_api(session,
     
     url = f"{api_base}/v1/chat/completions"  # TODO 
     
-    payload = {
-        "model": model_name,  
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    # {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
-                    {"type": "text", "text": "Hello, Who are you"}
-                ]
-            }
-        ],
-        "max_tokens": max_tokens,
-        "temperature": temperature,  
-        # "extra_body": {
-        #     "lora_request": {
-        #         "lora_name": lora_name,
-        #         "lora_path": lora_path
-        #     }
-        # }
-    }
+    # payload = {
+    #     "model": model_name,  
+    #     "messages": [
+    #         {
+    #             "role": "user",
+    #             "content": [
+    #                 # {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+    #                 {"type": "text", "text": "Hello, Who are you"}
+    #             ]
+    #         }
+    #     ],
+    #     "max_tokens": max_tokens,
+    #     "temperature": temperature,  
+    #     # "extra_body": {
+    #     #     "lora_request": {
+    #     #         "lora_name": lora_name,
+    #     #         "lora_path": lora_path
+    #     #     }
+    #     # }
+    # }
+    payload = payload
 
 
     try:
@@ -152,17 +154,22 @@ def inference_single_data_point(data_point,
         agent_input = scene_loader.get_agent_input_from_token(data_point)
 
         vllm_input = agent.unpack_features_for_vllm_service(agent_input)
+        if vllm_input is None:
+            score_row["valid"] = False
+            return score_row
 
 
 
 
-        # image64 = "im64"
-        # prompt = "请介绍你的方法"
 
-        # vllm_output = call_vllm_api(session=session, 
-        #                      image_b64=image64, prompt=prompt, 
-        #                      api_base=api_base,
-        #                      model_name=agent.vlm_path)
+        image64 = "im64"
+        prompt = "请介绍你的方法"
+
+        vllm_output = call_vllm_api(
+                             session=session, 
+                             image_b64=image64, prompt=prompt, payload=vllm_input,
+                             api_base=api_base,
+                             model_name=agent.vlm_path)
         
 
         # trajectory = agent.compute_traj_cot(agent_input, cot_text)
