@@ -15,7 +15,7 @@ CLIENT_ENV_NAME="nd"
 VLLM_GPU=0
 CLIENT_GPU=1
 
-EXP_NAME="debug_0614_inf_cot_04"
+EXP_NAME="debug_0615_inf_cot_03"
 
 
 # ------------------------
@@ -114,6 +114,8 @@ export NUPLAN_MAPS_ROOT="$OPENSCENE_DATA_ROOT/maps"
 export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 
+export TORCHDYNAMO_DISABLE=1    # dit compute 问题
+
 TRAIN_TEST_SPLIT=navtest
 python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     train_test_split=$TRAIN_TEST_SPLIT \
@@ -124,9 +126,12 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     +max_workers=24 \
     +api_base=$API_URL \
     +temperature=0.0 \
+    +inf_batch_size=64 \
     agent=negdrive_agent \
     agent.mode="eval" \
     agent.pass_cot_token_only=true \
+    agent.max_padding_len=512 \
+    agent.max_text_tokens=512 \
     agent.metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
     agent.vlm_path=$VLM_PATH \
     agent.vlm_size="small" \
@@ -134,8 +139,6 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     agent.dit_type="small" \
     agent.per_sample_rollout=4 \
     agent.bag_g=4 \
-    agent.max_text_tokens=512 \
-    agent.max_padding_len=2800 \
     agent.vlm_lr=1e-5 \
     agent.opt_weight_decay=0.01 \
     agent.opt_eps=1e-8 \
