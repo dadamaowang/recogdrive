@@ -8,7 +8,7 @@
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
 @Status  :   
 @Desc    :   
-    多线程异步并发请求 vLLM inference;
+    多线程异步并发请求 vLLM inference -> batched denoise -> 并发仿真
     启动脚本 recogdrive/scripts/evaluation/inference_cot_negdrive.sh
 '''
 
@@ -32,7 +32,6 @@ from tqdm import tqdm
 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
 
 import torch
 from torch.utils.data import DataLoader
@@ -60,7 +59,6 @@ logger = logging.getLogger(__name__)
 
 CONFIG_PATH = "config/pdm_scoring"
 CONFIG_NAME = "default_run_pdm_score"
-
 
 
 def call_vllm_api(session,
@@ -100,7 +98,6 @@ def call_vllm_api(session,
         # }
     }
 
-
     try:
         r = session.post(url, json=payload, timeout=120)
         r.raise_for_status()
@@ -120,13 +117,9 @@ def call_vllm_api(session,
 
 def inference_single_data_point(data_point, 
                                 scene_loader,
-                                metric_cache_loader,
-                                simulator,
-                                scorer, 
                                 agent,
                                 session,
                                 cfg,
-
                                 ):
     """Inference single scene
     
@@ -134,10 +127,6 @@ def inference_single_data_point(data_point,
     score_row: Dict[str, Any] = {"token": data_point, "valid": True}
 
     try:
-        metric_cache_path = metric_cache_loader.metric_cache_paths[data_point]            
-        with lzma.open(metric_cache_path, "rb") as f:
-            metric_cache: MetricCache = pickle.load(f)
-
         agent_input = scene_loader.get_agent_input_from_token(data_point)
 
         vllm_input_messages = agent.unpack_features_for_vllm_service(agent_input)
@@ -155,18 +144,6 @@ def inference_single_data_point(data_point,
                              )
         score_row["cot"] = cot_text if cot_text is not None else ""
         
-        trajectory = agent.compute_traj_cot(agent_input, cot_text)
-
-        pdm_result = pdm_score(
-            metric_cache=metric_cache,
-            model_trajectory=trajectory,
-            future_sampling=simulator.proposal_sampling,
-            simulator=simulator,
-            scorer=scorer,
-        )
-        score_row.update(asdict(pdm_result))
-
-
     except Exception as e:
         logger.warning(f"----------- Agent failed for token {data_point}:")
         traceback.print_exc()
@@ -255,8 +232,12 @@ def main(cfg: DictConfig) -> None:
     print("TOKENS TO EVALUATE: %s", str(len(tokens_to_evaluate)))
 
 
+    # =====================================
+    #   Call vLLM Inference
+    # =====================================
+
     # TODO 
-    tokens_to_evaluate = tokens_to_evaluate[:100]
+    tokens_to_evaluate = tokens_to_evaluate[:10]
 
     final_results = []
     session = build_session()
@@ -265,7 +246,7 @@ def main(cfg: DictConfig) -> None:
             executor.submit(
                 inference_single_data_point,
                 data_point,
-                scene_loader, metric_cache_loader, simulator, scorer,
+                scene_loader,
                 agent,
                 session,
                 cfg
@@ -273,7 +254,7 @@ def main(cfg: DictConfig) -> None:
             ): data_point
             for data_point in tokens_to_evaluate
         }
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Evaluating Scenes"):
+        for future in tqdm(as_completed(futures), total=len(futures), desc="vLLM Inference"):
             try:
                 result = future.result()
                 final_results.append(result)
@@ -282,7 +263,36 @@ def main(cfg: DictConfig) -> None:
                 logger.warning(f"Future failed for token {token}:")
                 traceback.print_exc()
     session.close()
+
+    import pickle
+    size_bytes = len(pickle.dumps(final_results))
+    print(f"final_results pickle size: {size_bytes} bytes ({size_bytes/1024**2:.2f} MB)")
+        
+    # =====================================
+    #   Batched Score Inference
+    # =====================================
+    for i in tqdm(range(0, len(final_results)), desc="Denoising and Evaluate"):     
+
+        agent_input = scene_loader.get_agent_input_from_token(final_results[i]["token"])
+        trajectory = agent.compute_traj_cot(agent_input, final_results[i]["cot"])
+
+        metric_cache_path = metric_cache_loader.metric_cache_paths[final_results[i]["token"]]            
+        with lzma.open(metric_cache_path, "rb") as f:
+            metric_cache: MetricCache = pickle.load(f)
+
+        pdm_result = pdm_score(
+            metric_cache=metric_cache,
+            model_trajectory=trajectory,
+            future_sampling=simulator.proposal_sampling,
+            simulator=simulator,
+            scorer=scorer,
+        )
+        final_results[i].update(asdict(pdm_result))
     
+    # =====================================
+    #  Summary Final Result
+    # =====================================    
+
     pdm_score_df = pd.DataFrame(final_results)
 
     num_sucessful_scenarios = pdm_score_df["valid"].sum()
