@@ -236,9 +236,6 @@ def main(cfg: DictConfig) -> None:
     #   Call vLLM Inference
     # =====================================
 
-    # TODO 
-    tokens_to_evaluate = tokens_to_evaluate[:10]
-
     final_results = []
     session = build_session()
     with ThreadPoolExecutor(max_workers=cfg.max_workers) as executor:
@@ -250,7 +247,6 @@ def main(cfg: DictConfig) -> None:
                 agent,
                 session,
                 cfg
-
             ): data_point
             for data_point in tokens_to_evaluate
         }
@@ -264,12 +260,12 @@ def main(cfg: DictConfig) -> None:
                 traceback.print_exc()
     session.close()
 
-    import pickle
-    size_bytes = len(pickle.dumps(final_results))
-    print(f"final_results pickle size: {size_bytes} bytes ({size_bytes/1024**2:.2f} MB)")
+    # import pickle
+    # size_bytes = len(pickle.dumps(final_results))
+    # print(f"final_results pickle size: {size_bytes} bytes ({size_bytes/1024**2:.2f} MB)")
         
     # =====================================
-    #   Batched Score Inference
+    #   Compute Traj & Score 
     # =====================================
     for i in tqdm(range(0, len(final_results)), desc="Denoising and Evaluate"):     
 
@@ -297,10 +293,12 @@ def main(cfg: DictConfig) -> None:
 
     num_sucessful_scenarios = pdm_score_df["valid"].sum()
     num_failed_scenarios = len(pdm_score_df) - num_sucessful_scenarios
-    average_row = pdm_score_df.drop(columns=["token", "valid",'rank']).mean(skipna=True)
+
+    # average_row = pdm_score_df.drop(columns=["token", "valid"]).mean(skipna=True)
+    numeric_mean = pdm_score_df.select_dtypes(include="number").mean(skipna=True)
+    average_row = numeric_mean
     average_row["token"] = "average"
     average_row["valid"] = pdm_score_df["valid"].all()
-    average_row["rank"] = "0"
     pdm_score_df.loc[len(pdm_score_df)] = average_row
 
     save_path = Path(cfg.output_dir)

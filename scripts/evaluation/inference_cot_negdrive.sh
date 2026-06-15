@@ -15,7 +15,7 @@ CLIENT_ENV_NAME="nd"
 VLLM_GPU=0
 CLIENT_GPU=1
 
-EXP_NAME="debug_0615_inf_cot_03"
+EXP_NAME="test_2b_recogdrive_cot_only_prompt_v1_0615"
 
 
 # ------------------------
@@ -137,11 +137,6 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     agent.vlm_size="small" \
     agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
     agent.dit_type="small" \
-    agent.per_sample_rollout=4 \
-    agent.bag_g=4 \
-    agent.vlm_lr=1e-5 \
-    agent.opt_weight_decay=0.01 \
-    agent.opt_eps=1e-8 \
     # agent.vlm_lora_path="/root/navsim_workspace/exps/0605_2b_negdrive_train_v1/last_lora/" \
 
 
