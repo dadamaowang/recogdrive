@@ -494,23 +494,19 @@ class NegDriveAgent(AbstractAgent):
         with torch.no_grad():
             with torch.autocast("cuda", dtype=torch.bfloat16):
 
+                model_inputs = self.vlm.tokenizer(
+                    [cot_text],
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=self.max_padding_len
+                )
+                input_ids = model_inputs["input_ids"].cuda()
+                attention_mask = model_inputs["attention_mask"].cuda()
+
                 if self.pass_cot_token_only:
-                    model_inputs = self.vlm.tokenizer(
-                        [cot_text],
-                        return_tensors="pt",
-                        padding=True,
-                        truncation=True,
-                        max_length=self.max_padding_len
-                    )
-                    input_ids = model_inputs["input_ids"].cuda()
-                    attention_mask = model_inputs["attention_mask"].cuda()
-                    fwd_output = self.vlm.forward_cot_only(
-                        input_ids, attention_mask
-                    )
-
+                    fwd_output = self.vlm.forward_cot_only(input_ids, attention_mask)
                 else:
-                    # TODO 
-
                     fwd_output = self.vlm.forward_with_ids(
                             pixel_values_cat,
                             input_ids, attention_mask
@@ -552,12 +548,8 @@ class NegDriveAgent(AbstractAgent):
         image_path_tensor = features["image_path_tensor"]
         if image_path_tensor.ndim == 1: image_path_tensor = image_path_tensor.unsqueeze(0)
         image_paths = decode_paths_from_tensor(image_path_tensor)
-
-        # pixel_values_list = [load_image(path) for path in image_paths] 
-        # num_patches_list = [p.shape[0] for p in pixel_values_list]
-        # pixel_values_cat = torch.cat(pixel_values_list, dim=0).cuda()        
-
-        history_trajectory = features["history_trajectory"].cuda()  
+        
+        history_trajectory = features["history_trajectory"].cuda()
         if history_trajectory.ndim == 2:
             history_trajectory = history_trajectory.unsqueeze(0)
 
