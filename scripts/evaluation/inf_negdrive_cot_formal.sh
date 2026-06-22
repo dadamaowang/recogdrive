@@ -1,3 +1,5 @@
+# 加 CoT 的测试可跑通的原始脚本，勿改
+
 # NOTICE:
 # 1. 提交选择 2 GPU
 # VLM_PATH 和 Diff_PATH 尺寸参数一致

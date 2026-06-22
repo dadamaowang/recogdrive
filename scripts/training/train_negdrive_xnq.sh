@@ -3,7 +3,7 @@
 # 2. default_training 里超参都检查一下
 
 source ~/.bashrc
-conda activate nd
+conda activate ndfl02
 which python
 
 # open clash
@@ -35,7 +35,7 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 # export CACHE_PATH=null
 
-EXP_NAME=0615_rlvr_debug
+EXP_NAME=test_env_ndfl02
 FAST_DEV_RUN=true
 
 MASTER_PORT=63669
@@ -76,9 +76,9 @@ torchrun \
     trainer.params.log_every_n_steps=1 \
     trainer.params.precision=bf16-mixed \
     agent.metric_cache_path="/root/navsim_workspace/exps/metric_cache_train" \
-    agent.vlm_path="/root/navsim_workspace/models/ReCogDrive-VLM-2B" \
-    agent.vlm_size="small" \
-    agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
+    agent.vlm_path="/root/navsim_workspace/models/ReCogDrive-VLM-8B" \
+    agent.vlm_size="large" \
+    agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-8B/ReCogDrive_Diffusion_Planner_8B_RL.ckpt"  \
     agent.dit_type="small" \
     agent.per_sample_rollout=4 \
     agent.bag_g=2 \

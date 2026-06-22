@@ -15,7 +15,7 @@ CLIENT_ENV_NAME="nd"
 VLLM_GPU=0
 CLIENT_GPU=1
 
-EXP_NAME="test_2b_recogdrive_add_cot_v2_0618"
+EXP_NAME="test_8b_recogdrive_add_cot_v2_0618"
 
 
 # ------------------------
@@ -41,7 +41,7 @@ VLM_PATH="/root/navsim_workspace/models/ReCogDrive-VLM-2B/"    # 记得检查 ag
 nohup $VLLM_CMD serve $VLM_PATH \
     --trust-remote-code \
     --limit-mm-per-prompt '{"image": 12}' \
-    --max-model-len 4096 \
+    --max-model-len 5800 \
     --dtype bfloat16 \
     --tokenizer $VLM_PATH \
     --tokenizer-mode auto \
@@ -134,8 +134,8 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     agent.max_text_tokens=512 \
     agent.metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
     agent.vlm_path=$VLM_PATH \
-    agent.vlm_size="small" \
-    agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
+    agent.vlm_size="large" \
+    agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-8B/ReCogDrive_Diffusion_Planner_8B_RL.ckpt"  \
     agent.dit_type="small" \
     # agent.vlm_lora_path="/root/navsim_workspace/exps/0605_2b_negdrive_train_v1/last_lora/" \
 

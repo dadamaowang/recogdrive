@@ -66,8 +66,10 @@ def call_vllm_api(session,
                   api_base: str = "http://localhost:8001",
                   model_name : str = "InternVL", 
                   max_tokens : int = 128,
-                  temperature: float = 0.0,     # TODO 评估通常使用 greedy decoding (0.0) 或较低温度
-                  with_lora: bool = False,     # TODO with lora 
+                  temperature: float = 0.0,     
+                  with_lora: bool = False,      
+                  max_lora_rank: int = 16, 
+                  lora_path: str = "lora_path"
                   ):
     """
     
@@ -84,19 +86,29 @@ def call_vllm_api(session,
     
     """
     url = f"{api_base}/v1/chat/completions"  
-    
-    payload = {
-        "model": model_name,  
-        "messages": vllm_input_messages,
-        "max_tokens": max_tokens,
-        "temperature": temperature,  
-        # "extra_body": {   # TODO add Lora
-        #     "lora_request": {
-        #         "lora_name": lora_name,
-        #         "lora_path": lora_path
-        #     }
-        # }
-    }
+
+    if with_lora:
+        payload = {
+            "model": "neg_lora",  
+            "messages": vllm_input_messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,  
+            # "extra_body": {   # TODO add Lora
+            #     "lora_request": {
+            #         "lora_name": "neg_lora",
+            #         "lora_path": lora_path,
+            #         "max_lora_rank": max_lora_rank,
+            #     }
+            # }
+        }    
+
+    else:
+        payload = {
+            "model": model_name,  
+            "messages": vllm_input_messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,  
+        }
 
     try:
         r = session.post(url, json=payload, timeout=120)
@@ -140,7 +152,8 @@ def inference_single_data_point(data_point,
                              api_base=cfg.api_base,
                              model_name=agent.vlm_path,
                              max_tokens=agent.max_text_tokens,
-                             temperature=cfg.temperature
+                             temperature=cfg.temperature,
+                             with_lora=cfg.with_lora,
                              )
         score_row["cot"] = cot_text if cot_text is not None else ""
         
@@ -231,7 +244,8 @@ def main(cfg: DictConfig) -> None:
 
     print("TOKENS TO EVALUATE: %s", str(len(tokens_to_evaluate)))
 
-
+    if cfg.quick_check:
+        tokens_to_evaluate = tokens_to_evaluate[:10]
     # =====================================
     #   Call vLLM Inference
     # =====================================
