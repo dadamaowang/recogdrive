@@ -15,6 +15,33 @@ defaults:
   - _self_
 
 split: trainval
+
+# Training scene subset: full (all train_logs) | high_risk (token whitelist)
+train_scene_subset: full
+# Validation scene subset: full (all val_logs on trainval) | high_risk_test (navtest token whitelist)
+val_scene_subset: full
+# Run full validation once before training (logged at global_step=0, no checkpoint saved)
+run_baseline_validation: true
+
+high_risk:
+  tokens_path: ${oc.env:NAVSIM_DEVKIT_ROOT}/scripts/filter_high_risk_scenes/high_risk_train/high_risk_train.txt
+  val_tokens_path: ${oc.env:NAVSIM_DEVKIT_ROOT}/scripts/filter_high_risk_scenes/high_risk_test/high_risk_test.txt
+  # When true, high_risk training searches both train_logs and val_logs on trainval.
+  include_val_logs: true
+
+validation:
+  metric_cache_path: ${oc.env:NAVSIM_EXP_ROOT}/metric_cache
+  scene_filter:
+    _target_: navsim.common.dataclasses.SceneFilter
+    _convert_: all
+    num_history_frames: 4
+    num_future_frames: 10
+    frame_interval: 1
+    has_route: true
+    max_scenes: null
+    log_names: null
+    tokens: null
+
 cache_path: ${oc.env:NAVSIM_EXP_ROOT}/training_cache_transfuser
 use_cache_without_dataset: false # load the training samples from the cache. scene-filter will be ignored
 force_cache_computation: true

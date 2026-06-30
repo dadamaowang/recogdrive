@@ -253,7 +253,7 @@ class NegDriveBackbone(nn.Module):
 
         queries = self._build_queries(pixel_values, questions, num_patches_list)
 
-        self.tokenizer.padding_side = 'left'
+        self.tokenizer.padding_side = 'left'    # NOTE 推理时 left, 其它时 right
         model_inputs = self.tokenizer(queries, 
                                     return_tensors='pt', 
                                     padding='max_length', 
@@ -322,7 +322,9 @@ class NegDriveBackbone(nn.Module):
                 pixel_values: torch.Tensor,
                 questions: List[str],
                 num_patches_list: List[int], 
-                max_new_tokens: int = 256,   
+                max_new_tokens: int = 256,
+                do_sample: bool = True,
+                temperature: float = 0.7,
         ) -> NegDriveGenOutput:
         """
         Run VLM in generation mode to produce one text response per batch item. 
@@ -334,6 +336,8 @@ class NegDriveBackbone(nn.Module):
             questions:        List[str], len=B
             num_patches_list: List[int], len=B
             max_new_tokens:   How many tokens to generate per response.
+            do_sample:        If False, use greedy decoding (validation default).
+            temperature:      Sampling temperature when do_sample=True.
                             
         Returns:
             GenerationOutput                            
@@ -343,7 +347,7 @@ class NegDriveBackbone(nn.Module):
         # ----------------------
         queries = self._build_queries(pixel_values, questions, num_patches_list)
         
-        self.tokenizer.padding_size = 'left'
+        self.tokenizer.padding_side = 'left'
         model_inputs = self.tokenizer(
             queries,
             return_tensors='pt',
@@ -366,15 +370,18 @@ class NegDriveBackbone(nn.Module):
         # -----------------------
         #   Generate New Tokens
         # -----------------------
-        generated_ids = self.model.generate(
+        generate_kwargs = dict(
             pixel_values=pixel_values,
             input_ids=input_ids,
             attention_mask=attention_mask,
-            max_new_tokens=max_new_tokens,  
-            do_sample=True,
-            temperature=1.0,
-            pad_token_id=self.tokenizer.eos_token_id
-        )   # [B, max_new_tokens] 
+            max_new_tokens=max_new_tokens,
+            do_sample=do_sample,
+            pad_token_id=self.tokenizer.eos_token_id,
+        )
+        if do_sample:
+            generate_kwargs["temperature"] = temperature
+
+        generated_ids = self.model.generate(**generate_kwargs)   # [B, max_new_tokens]
 
         # ---------------------------------------
         #   Build Full Sequence Attention Mask
@@ -394,6 +401,8 @@ class NegDriveBackbone(nn.Module):
             generated_ids, skip_special_tokens=True
         )
         print(f"生成文字检查: {text_actions}")
+
+        self.tokenizer.padding_side = 'right'
 
         return NegDriveGenOutput(
             full_ids=full_ids,
@@ -464,16 +473,72 @@ class NegDriveBackbone(nn.Module):
         )
     
 
+    def forward_with_ids_cot_and_image(self,
+                                       pixel_values: torch.Tensor,
+                                       questions: List[str],
+                                       num_patches_list: List[int], 
+                                       ) -> NegDriveBackboneOutput:
+
+        queries = self._build_queries(pixel_values, questions, num_patches_list)
+        
+        model_inputs = self.tokenizer(
+            queries,
+            return_tensors='pt',
+            padding=True,
+            truncation=True,
+            max_length=self.max_padding_len,
+        )
+        device = torch.device("cuda")
+
+        input_ids = model_inputs['input_ids'].to(self.device)    # [B, SeqLen]
+        attention_mask = model_inputs['attention_mask'].to(self.device)  # [B, SeqLen]
+        # ensure [B, SeqLen] (in case B=1)
+        if input_ids.ndim == 1:
+            input_ids = input_ids.unsqueeze(0)  # [1, SeqLen]
+        if attention_mask.ndim == 1:
+            attention_mask = attention_mask.unsqueeze(0)    # [1, SeqLen]
+
+        position_ids = attention_mask.long().cumsum(-1) - 1
+        position_ids.masked_fill_(attention_mask == 0, 1)
+
+        num_patches = pixel_values.size(0)
+        image_flags = torch.tensor([1] * num_patches, dtype=torch.long)
+
+        model_outputs = self.model(
+                pixel_values=pixel_values,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                image_flags=image_flags.squeeze(-1),
+                output_hidden_states=True,
+                return_dict=True,
+        )
+
+        return NegDriveBackboneOutput(
+            logits=model_outputs.logits,
+            hidden_states=model_outputs.hidden_states,
+            input_ids=input_ids,
+            attention_mask=attention_mask
+        )
+
+
+
     def forward_cot_only(self,
-                         input_ids: torch.Tensor,     # [B, SeqLen] - pre-build, includes response 
-                         attention_mask: torch.Tensor    # [B, SeqLen]
+                         cot_text,  # [SeqLen] (batch_size=1)
                          ) -> NegDriveBackboneOutput:
         """
         Use as 'self.eval' mode, only compute cot text token's last hidden states, no need to use vision encoder
         """
-        device = torch.device('cuda')
-        input_ids = input_ids.to(device)
-        attention_mask = attention_mask.to(device)
+
+        model_inputs = self.tokenizer(
+            [cot_text],
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=self.max_padding_len
+        )
+        input_ids = model_inputs["input_ids"].to(self.device)
+        attention_mask = model_inputs["attention_mask"].to(self.device)
 
         position_ids = attention_mask.long().cumsum(-1) - 1
         position_ids.masked_fill_(attention_mask == 0, 1)

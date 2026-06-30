@@ -10,7 +10,7 @@
 @Desc    :   【正在优化】
 '''
 
-from typing import Tuple, List, Dict, Any 
+from typing import Tuple, List, Dict, Any, Optional
 from pathlib import Path
 import logging
 import os
@@ -24,14 +24,14 @@ import torch.distributed as dist
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
-from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+from swanlab.integration.pytorch_lightning import SwanLabLogger
 
 
 from navsim.agents.abstract_agent import AbstractAgent
 from navsim.common.dataclasses import SceneFilter
-from navsim.common.dataloader import SceneLoader
+from navsim.common.dataloader import SceneLoader, MetricCacheLoader
 from navsim.planning.training.dataset import Dataset
-from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL, VRAMMonitor, OptimizerHealthMonitor, LoRAModelCheckpoint
+from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL, VRAMMonitor, OptimizerHealthMonitor, IterLoRAModelCheckpoint
 
 
 
@@ -84,55 +84,305 @@ def negdrive_collate_fn(
     return features, targets, tokens_list
 
 
+def load_token_list(tokens_path: Path) -> List[str]:
+    """Load scene tokens from a newline-delimited text file."""
+    if not tokens_path.exists():
+        raise FileNotFoundError(f"High-risk tokens file not found: {tokens_path}")
+
+    tokens: List[str] = []
+    with tokens_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            token = line.strip()
+            if token:
+                tokens.append(token)
+
+    if not tokens:
+        raise ValueError(f"No tokens found in {tokens_path}")
+
+    return tokens
+
+
+def apply_train_log_names(scene_filter: SceneFilter, train_logs: List[str]) -> SceneFilter:
+    """Restrict scene filter to official training logs."""
+    if scene_filter.log_names is not None:
+        scene_filter.log_names = [
+            log_name for log_name in scene_filter.log_names if log_name in train_logs
+        ]
+    else:
+        scene_filter.log_names = list(train_logs)
+    return scene_filter
+
+
+def warn_missing_metric_cache(
+    tokens: List[str],
+    metric_cache_path: str,
+    rank: int = 0,
+) -> None:
+    """Warn if high-risk tokens are missing from the metric cache index."""
+    if rank != 0:
+        return
+    if not metric_cache_path:
+        return
+
+    cache_path = Path(metric_cache_path)
+    if not cache_path.exists():
+        logger.warning("Metric cache path does not exist: %s", metric_cache_path)
+        return
+
+    loader = MetricCacheLoader(cache_path)
+    cache_tokens = set(loader.metric_cache_paths.keys())
+    missing = set(tokens) - cache_tokens
+    if missing:
+        logger.warning(
+            "High-risk tokens missing from metric cache: %d / %d (path: %s)",
+            len(missing),
+            len(tokens),
+            metric_cache_path,
+        )
+    else:
+        logger.info("All %d high-risk tokens found in metric cache.", len(tokens))
+
+
+def build_experiment_config(cfg: DictConfig) -> Dict[str, Any]:
+    """Build a compact config dict for SwanLab (avoid huge log_names / Hydra dumps)."""
+    scene_filter = OmegaConf.select(cfg, "train_test_split.scene_filter", default={})
+    log_names = scene_filter.get("log_names") if scene_filter else None
+    tokens = scene_filter.get("tokens") if scene_filter else None
+
+    return {
+        "experiment_name": cfg.experiment_name,
+        "split": cfg.get("split", None),
+        "seed": cfg.seed,
+        "train_test_split": {
+            "data_split": str(OmegaConf.select(cfg, "train_test_split.data_split", default="")),
+            "scene_filter": {
+                "num_history_frames": OmegaConf.select(
+                    cfg, "train_test_split.scene_filter.num_history_frames", default=None
+                ),
+                "num_future_frames": OmegaConf.select(
+                    cfg, "train_test_split.scene_filter.num_future_frames", default=None
+                ),
+                "num_log_names": len(log_names) if log_names else 0,
+                "num_tokens": len(tokens) if tokens else 0,
+            },
+        },
+        "train_scene_subset": cfg.get("train_scene_subset", None),
+        "val_scene_subset": cfg.get("val_scene_subset", None),
+        "high_risk": {
+            "tokens_path": str(OmegaConf.select(cfg, "high_risk.tokens_path", default="")),
+            "val_tokens_path": str(OmegaConf.select(cfg, "high_risk.val_tokens_path", default="")),
+            "include_val_logs": bool(OmegaConf.select(cfg, "high_risk.include_val_logs", default=True)),
+        },
+        "dataloader": OmegaConf.to_container(cfg.dataloader.params, resolve=True),
+        "trainer": OmegaConf.to_container(cfg.trainer.params, resolve=True),
+        "agent": {
+            "rl_algorithm": OmegaConf.select(cfg, "agent.rl_algorithm", default=None),
+            "vlm_type": OmegaConf.select(cfg, "agent.vlm_type", default=None),
+            "vlm_size": OmegaConf.select(cfg, "agent.vlm_size", default=None),
+            "vlm_lr": OmegaConf.select(cfg, "agent.vlm_lr", default=None),
+            "lora_r": OmegaConf.select(cfg, "agent.lora_r", default=None),
+            "lora_alpha": OmegaConf.select(cfg, "agent.lora_alpha", default=None),
+            "lora_dropout": OmegaConf.select(cfg, "agent.lora_dropout", default=None),
+            "per_sample_rollout": OmegaConf.select(cfg, "agent.per_sample_rollout", default=None),
+            "bag_g": OmegaConf.select(cfg, "agent.bag_g", default=None),
+            "max_text_tokens": OmegaConf.select(cfg, "agent.max_text_tokens", default=None),
+            "max_padding_len": OmegaConf.select(cfg, "agent.max_padding_len", default=None),
+            "rollout_temperature": OmegaConf.select(cfg, "agent.rollout_temperature", default=None),
+            "val_do_sample": OmegaConf.select(cfg, "agent.val_do_sample", default=None),
+            "pass_cot_token_only": OmegaConf.select(cfg, "agent.pass_cot_token_only", default=None),
+            "grpo_cfg": OmegaConf.to_container(cfg.agent.grpo_cfg, resolve=True),
+        },
+        "log_split_stats": {
+            "num_train_logs": len(getattr(cfg, "train_logs", []) or []),
+            "num_val_logs": len(getattr(cfg, "val_logs", []) or []),
+        },
+    }
+
+
+def build_train_scene_filter(cfg: DictConfig) -> SceneFilter:
+    """
+    Build training SceneFilter according to train_scene_subset.
+    :param cfg: omegaconf dictionary
+    :return: scene filter for training set
+    """
+    base_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
+    subset = cfg.get("train_scene_subset", "full")
+
+    if subset == "full":
+        return apply_train_log_names(base_filter, cfg.train_logs)
+
+    if subset == "high_risk":
+        tokens_path = Path(cfg.high_risk.tokens_path)
+        tokens = load_token_list(tokens_path)
+        logger.info(
+            "Using high-risk training subset: %d tokens from %s",
+            len(tokens),
+            tokens_path,
+        )
+
+        metric_cache_path = OmegaConf.select(cfg, "agent.metric_cache_path", default=None)
+        warn_missing_metric_cache(
+            tokens,
+            metric_cache_path,
+            rank=int(os.getenv("RANK", 0)),
+        )
+
+        include_val_logs = bool(
+            OmegaConf.select(cfg, "high_risk.include_val_logs", default=True)
+        )
+        if include_val_logs:
+            base_filter.log_names = list(cfg.train_logs) + list(cfg.val_logs)
+            logger.info(
+                "High-risk training searches train_logs + val_logs (%d logs).",
+                len(base_filter.log_names),
+            )
+        else:
+            base_filter.log_names = list(cfg.train_logs)
+        base_filter.tokens = tokens
+        return base_filter
+
+    raise ValueError(
+        f"Unknown train_scene_subset: {subset!r}. Expected 'full' or 'high_risk'."
+    )
+
+
+def resolve_validation_paths(cfg: DictConfig) -> Tuple[Path, Path, Optional[str]]:
+    """
+    Resolve navsim log, sensor blob, and metric cache paths for validation.
+    """
+    subset = cfg.get("val_scene_subset", "full")
+    open_scene = Path(os.environ.get("OPENSCENE_DATA_ROOT", "/root/navsim_workspace/dataset"))
+
+    if subset == "full":
+        metric_cache_path = OmegaConf.select(cfg, "agent.metric_cache_path", default=None)
+        return Path(cfg.navsim_log_path), Path(cfg.sensor_blobs_path), metric_cache_path
+
+    if subset == "high_risk_test":
+        metric_cache_path = OmegaConf.select(
+            cfg, "validation.metric_cache_path", default=None
+        )
+        return (
+            open_scene / "navsim_logs" / "test",
+            open_scene / "sensor_blobs" / "test",
+            metric_cache_path,
+        )
+
+    raise ValueError(
+        f"Unknown val_scene_subset: {subset!r}. Expected 'full' or 'high_risk_test'."
+    )
+
+
+def build_val_scene_filter(cfg: DictConfig) -> SceneFilter:
+    """Build validation SceneFilter according to val_scene_subset."""
+    subset = cfg.get("val_scene_subset", "full")
+
+    if subset == "full":
+        val_scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
+        if val_scene_filter.log_names is not None:
+            val_scene_filter.log_names = [
+                log_name for log_name in val_scene_filter.log_names if log_name in cfg.val_logs
+            ]
+        else:
+            val_scene_filter.log_names = list(cfg.val_logs)
+        return val_scene_filter
+
+    if subset == "high_risk_test":
+        tokens_path = Path(cfg.high_risk.val_tokens_path)
+        tokens = load_token_list(tokens_path)
+        logger.info(
+            "Using high-risk navtest validation subset: %d tokens from %s",
+            len(tokens),
+            tokens_path,
+        )
+
+        metric_cache_path = OmegaConf.select(
+            cfg, "validation.metric_cache_path", default=None
+        )
+        warn_missing_metric_cache(
+            tokens,
+            metric_cache_path,
+            rank=int(os.getenv("RANK", 0)),
+        )
+
+        val_scene_filter: SceneFilter = instantiate(cfg.validation.scene_filter)
+        val_scene_filter.log_names = None
+        val_scene_filter.tokens = tokens
+        return val_scene_filter
+
+    raise ValueError(
+        f"Unknown val_scene_subset: {subset!r}. Expected 'full' or 'high_risk_test'."
+    )
+
+
 def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Dataset]:
     """
-    Builds training and validation datasets from omega config 
+    Builds training and validation datasets from omega config
     :param cfg: omegaconf dictionary
     :param agent: interface of agents in NAVSIM
     :return: tuple for training and validation dataset
+
+    SceneFilter cfg: config/common/train_test_split/scene_filter/navtrain.yaml
+    train_logs / val_logs: config/training/default_train_val_test_log_split.yaml
+
+    train_scene_subset:
+      - full: all scenes in train_logs (default)
+      - high_risk: (train_logs + val_logs if high_risk.include_val_logs) intersect
+        high_risk.tokens_path whitelist
+
+    val_scene_subset:
+      - full: all scenes in val_logs on trainval (default)
+      - high_risk_test: navtest test split intersect high_risk.val_tokens_path
     """
-    train_scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
+    train_scene_filter: SceneFilter = build_train_scene_filter(cfg)
+    val_scene_filter: SceneFilter = build_val_scene_filter(cfg)
 
-    """
-    SceneFilter 目前用到的 cfg：
-    /root/recogdrive/navsim/planning/script/config/common/train_test_split/scene_filter/navtrain.yaml
-
-    其中，train_logs, val_logs 划分：
-    /root/recogdrive/navsim/planning/script/config/training/default_train_val_test_log_split.yaml
-
-    """
-
-    if train_scene_filter.log_names is not None:
-        train_scene_filter.log_names = [
-            log_name for log_name in train_scene_filter.log_names if log_name in cfg.train_logs
-        ]
-    else:
-        train_scene_filter.log_names = cfg.train_logs
-    
-    val_scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
-    if val_scene_filter.log_names is not None:
-        val_scene_filter.log_names = [log_name for log_name in val_scene_filter.log_names if log_name in cfg.val_logs]
-    else:
-        val_scene_filter.log_names = cfg.val_logs
-
-    data_path = Path(cfg.navsim_log_path)
-    sensor_blobs_path = Path(cfg.sensor_blobs_path)
+    train_data_path = Path(cfg.navsim_log_path)
+    train_sensor_blobs_path = Path(cfg.sensor_blobs_path)
+    val_data_path, val_sensor_blobs_path, _ = resolve_validation_paths(cfg)
 
     train_scene_loader = SceneLoader(
-        sensor_blobs_path=sensor_blobs_path,
-        data_path=data_path,
+        sensor_blobs_path=train_sensor_blobs_path,
+        data_path=train_data_path,
         scene_filter=train_scene_filter,
         sensor_config=agent.get_sensor_config(),
         load_image_path=True       # NOTE 如果训 VLM, 这里需要设置成 True; 
     )
 
+    if cfg.get("train_scene_subset", "full") == "high_risk" and int(os.getenv("RANK", 0)) == 0:
+        requested = len(train_scene_filter.tokens or [])
+        loaded = len(train_scene_loader.tokens)
+        if loaded < requested:
+            logger.warning(
+                "Loaded %d high-risk scenes from dataset, but %d tokens were listed "
+                "(%d not found in trainval logs).",
+                loaded,
+                requested,
+                requested - loaded,
+            )
+        else:
+            logger.info("Loaded %d high-risk training scenes.", loaded)
+
     val_scene_loader = SceneLoader(
-        sensor_blobs_path=sensor_blobs_path,
-        data_path=data_path,
+        sensor_blobs_path=val_sensor_blobs_path,
+        data_path=val_data_path,
         scene_filter=val_scene_filter,
         sensor_config=agent.get_sensor_config(),
         load_image_path=True
     )
+
+    if cfg.get("val_scene_subset", "full") == "high_risk_test" and int(os.getenv("RANK", 0)) == 0:
+        requested = len(val_scene_filter.tokens or [])
+        loaded = len(val_scene_loader.tokens)
+        if loaded < requested:
+            logger.warning(
+                "Loaded %d high-risk navtest scenes for validation, but %d tokens were listed "
+                "(%d not found in test logs).",
+                loaded,
+                requested,
+                requested - loaded,
+            )
+        else:
+            logger.info("Loaded %d high-risk navtest validation scenes.", loaded)
 
     train_data = Dataset(
         scene_loader=train_scene_loader,
@@ -204,32 +454,36 @@ def main(cfg: DictConfig) -> None:
         shuffle=False
     )
 
-    wandb_config = OmegaConf.to_container(cfg, resolve=True) if "OmegaConf" in globals() else dict(cfg)
-    wandb_logger = WandbLogger(
-        project="negdrive_training_pro02",
-        name=cfg.experiment_name,
-        config=wandb_config,
-        save_dir=cfg.output_dir,
+    experiment_config = build_experiment_config(cfg)
+    swanlab_mode = os.environ.get("SWANLAB_MODE", "online")
+    swanlab_logger = SwanLabLogger(
+        project="negdrive",
+        experiment_name=cfg.experiment_name,
+        config=experiment_config,
+        log_dir=cfg.output_dir,
+        mode=swanlab_mode,
     )
 
-    logger.info("Building Trainer")
+    logger.info("Building Trainer (SwanLab mode=%s)", swanlab_mode)
     trainer = pl.Trainer(
-        **cfg.trainer.params, 
-        logger=wandb_logger,
+        **cfg.trainer.params,
+        enable_checkpointing=False,
+        logger=swanlab_logger,
         callbacks=[
             VRAMMonitor(), 
             LearningRateMonitor(logging_interval="step"),
             OptimizerHealthMonitor(),
-            LoRAModelCheckpoint(    # TODO 调整 save 参数
-                monitor="val/best_of_g_reward",
-                mode="max",
-                save_top_k=3,
-                filename="best_g_reward-step={step:08d}-val_best_of_g_reward={val/best_of_g_reward:.4f}",
-                save_last=True,
+            IterLoRAModelCheckpoint(    # TODO 改成监控 rewards 的
+                dirpath=os.path.join(cfg.output_dir, "checkpoints"),
             ),
         ]
         )
 
+
+    if cfg.get("run_baseline_validation", True):
+        logger.info("Running baseline validation at iter 0 (before training)...")
+        trainer.validate(model=lightning_module, dataloaders=val_dataloader)
+        logger.info("Baseline validation complete (metrics logged at global_step=0).")
 
     logger.info("Starting Training")
     trainer.fit(

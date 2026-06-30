@@ -14,7 +14,7 @@ CLIENT_ENV_NAME="nd"
 VLLM_GPU=0
 CLIENT_GPU=1
 
-EXP_NAME="debug_lora_01"
+EXP_NAME="8bcotimg_test_0626"
 
 
 # ------------------------
@@ -34,24 +34,7 @@ VLLM_CMD=$(which vllm)
 echo "[$(date)] which vLLM : $VLLM_CMD"
 
 
-VLM_PATH="/root/navsim_workspace/models/ReCogDrive-VLM-2B/"    # 记得检查 agent.diff_path 大小兼容
-
-# nohup $VLLM_CMD serve $VLM_PATH \
-#     --trust-remote-code \
-#     --limit-mm-per-prompt '{"image": 12}' \
-#     --max-model-len 5800 \
-#     --dtype bfloat16 \
-#     --tokenizer $VLM_PATH \
-#     --tokenizer-mode auto \
-#     --max-num-seqs 128 \
-#     --gpu-memory-utilization 0.90 \
-#     --port $PORT \
-#     --host 0.0.0.0 \
-#     > vllm_server_${EXP_NAME}.log 2>&1 &
-
-
-LORA_PATH="/root/navsim_workspace/exps/0613_yrs_NSR-train/2026.06.19.13.42.42_NSR/checkpoints/iter_315_lora/"
-MAX_LORA_RANK=16
+VLM_PATH="/root/navsim_workspace/models/ReCogDrive-VLM-8B/"    # 记得检查 agent.diff_path 大小兼容
 
 nohup $VLLM_CMD serve $VLM_PATH \
     --trust-remote-code \
@@ -61,13 +44,30 @@ nohup $VLLM_CMD serve $VLM_PATH \
     --tokenizer $VLM_PATH \
     --tokenizer-mode auto \
     --max-num-seqs 128 \
-    --enable-lora \
-    --max-lora-rank $MAX_LORA_RANK \
-    --lora-modules neg_lora=$LORA_PATH \
     --gpu-memory-utilization 0.90 \
     --port $PORT \
     --host 0.0.0.0 \
     > vllm_server_${EXP_NAME}.log 2>&1 &
+
+
+# LORA_PATH="/root/navsim_workspace/exps/0613_yrs_NSR-train/2026.06.19.13.42.42_NSR/checkpoints/iter_315_lora/"
+# MAX_LORA_RANK=16
+
+# nohup $VLLM_CMD serve $VLM_PATH \
+#     --trust-remote-code \
+#     --limit-mm-per-prompt '{"image": 12}' \
+#     --max-model-len 5800 \
+#     --dtype bfloat16 \
+#     --tokenizer $VLM_PATH \
+#     --tokenizer-mode auto \
+#     --max-num-seqs 128 \
+#     --enable-lora \
+#     --max-lora-rank $MAX_LORA_RANK \
+#     --lora-modules neg_lora=$LORA_PATH \
+#     --gpu-memory-utilization 0.90 \
+#     --port $PORT \
+#     --host 0.0.0.0 \
+#     > vllm_server_${EXP_NAME}.log 2>&1 &
 
 
 
@@ -75,7 +75,7 @@ VLLM_PID=$!
 echo "[$(date)] vLLM service is launched: $VLLM_PID on GPU: $VLLM_GPU"
 
 echo "[$(date)] wait vLLM initialize..."
-MAX_RETRIES=120
+MAX_RETRIES=200
 RETRY_COUNT=0
 
 while true; do
@@ -125,8 +125,8 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     +max_workers=24 \
     +api_base=$API_URL \
     +temperature=0.0 \
-    +with_lora=true \
-    +quick_check=true \
+    +with_lora=false \
+    +quick_check=false \
     agent=negdrive_agent \
     agent.mode="eval" \
     agent.pass_cot_token_only=false \
@@ -134,10 +134,10 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \
     agent.max_text_tokens=512 \
     agent.metric_cache_path="/root/navsim_workspace/exps/metric_cache" \
     agent.vlm_path=$VLM_PATH \
-    agent.vlm_size="small" \
-    agent.vlm_lora_path=$LORA_PATH \
-    agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
+    agent.vlm_size="large" \
+    agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-8B/ReCogDrive_Diffusion_Planner_8B_RL.ckpt"  \
     agent.dit_type="small" 
+    # agent.vlm_lora_path=$LORA_PATH \
 
 
 # ==========================================

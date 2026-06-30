@@ -1,7 +1,5 @@
 
-# NOTEICE
-# 1. metric_cache 路径检查
-# 2. default_training 里超参都检查一下
+
 
 
 source ~/.bashrc
@@ -9,23 +7,7 @@ conda activate nd
 which python
 
 
-# open clash (optional, not required for SwanLab)
-# ~/clash -d ~/.config/clash/ > clash_job.log 2>&1 &
-# CLASH_PID=$!
-#
-# echo "Waiting for Clash to start..."
-# for i in {1..15}; do
-#     if ss -tuln | grep -q ":7890"; then
-#         echo "Clash is ready!"
-#         break
-#     fi
-#     sleep 1
-# done
-#
-# ps aux | grep clash
-#
-# export http_proxy=http://127.0.0.1:7890
-# export https_proxy=http://127.0.0.1:7890
+
 
 
 nvidia-smi
@@ -49,13 +31,16 @@ HIGH_RISK_VAL_TOKENS_PATH="${NAVSIM_DEVKIT_ROOT}/scripts/filter_high_risk_scenes
 VAL_METRIC_CACHE_PATH="/root/navsim_workspace/exps/metric_cache"
 
 # RL algorithm: nsr | grpo
-RL_ALGORITHM=grpo
+RL_ALGORITHM=nsr
 if [ "$RL_ALGORITHM" = "grpo" ]; then
     EXP_NAME=0617_yrs_GRPO-train
 else
     EXP_NAME=0613_yrs_NSR-train
 fi
 FAST_DEV_RUN=false
+
+EXP_NAME=0629_nsr_g8
+
 
 MASTER_PORT=63669
 PORT=63665
@@ -107,7 +92,7 @@ torchrun \
     agent.vlm_size="small" \
     agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
     agent.dit_type="small" \
-    agent.per_sample_rollout=6 \
+    agent.per_sample_rollout=8 \
     agent.bag_g=2 \
     agent.max_text_tokens=512 \
     agent.max_padding_len=2800 \

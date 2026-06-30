@@ -62,6 +62,8 @@ class NegDriveAgent(AbstractAgent):
         vlm_size: str = "large",       
 
         max_text_tokens: int = 128,   # max generated text tokens
+        rollout_temperature: float = 0.7,   # training rollout sampling temperature
+        val_do_sample: bool = False,   # validation: false = greedy decoding
         pass_cot_token_only: bool = False,  # if True, pass only cot token's last hidden states to planner
 
         # ========== Optimizers and Schedulers ==========
@@ -79,7 +81,9 @@ class NegDriveAgent(AbstractAgent):
         freeze_diffusion: bool = True,           
         diff_path: Optional[str] = None,
 
-        # ========== RL / GRPO ==========
+        # ========== RL ==========
+        rl_algorithm: str = "nsr",   # nsr | grpo
+        grpo_cfg: Optional[Dict[str, Any]] = None,
         per_sample_rollout: int = 4,
         bag_g: int = 4,   # Best-of-G reward
         max_padding_len: int = 2800,   # max token length after padding (for diffusion input) 
@@ -171,6 +175,8 @@ class NegDriveAgent(AbstractAgent):
         # vlm setting
         # -----------------------
         self.max_text_tokens = max_text_tokens
+        self.rollout_temperature = rollout_temperature
+        self.val_do_sample = val_do_sample
 
         self.pass_cot_token_only = pass_cot_token_only
 
@@ -235,6 +241,13 @@ class NegDriveAgent(AbstractAgent):
         # training parameters 
         # -----------------------
         self._lr = vlm_lr
+
+        self.rl_algorithm = rl_algorithm.lower()
+        if self.rl_algorithm not in ("nsr", "grpo"):
+            raise ValueError(
+                f"Unknown rl_algorithm: {rl_algorithm!r}. Expected 'nsr' or 'grpo'."
+            )
+        self.grpo_cfg = dict(grpo_cfg) if grpo_cfg is not None else {}
 
         self.per_sample_rollout = per_sample_rollout
         self.bag_g = bag_g
@@ -493,23 +506,20 @@ class NegDriveAgent(AbstractAgent):
 
         with torch.no_grad():
             with torch.autocast("cuda", dtype=torch.bfloat16):
-
-                model_inputs = self.vlm.tokenizer(
-                    [cot_text],
-                    return_tensors="pt",
-                    padding=True,
-                    truncation=True,
-                    max_length=self.max_padding_len
-                )
-                input_ids = model_inputs["input_ids"].cuda()
-                attention_mask = model_inputs["attention_mask"].cuda()
-
                 if self.pass_cot_token_only:
-                    fwd_output = self.vlm.forward_cot_only(input_ids, attention_mask)
+                    fwd_output = self.vlm.forward_cot_only(cot_text)
                 else:
-                    fwd_output = self.vlm.forward_with_ids(
-                            pixel_values_cat,
-                            input_ids, attention_mask
+                    # create new prompt list(cot list)
+                    batch_size = len(questions)
+                    if batch_size > 1:
+                        cot_list = []
+                        for b in batch_size:
+                            cot_list.append(f"{cot_text}")
+                    else:
+                        cot_list = [cot_text]
+
+                    fwd_output = self.vlm.forward_with_ids_cot_and_image(
+                        pixel_values_cat, cot_list, num_patches_list
                     )
 
                 last_hidden_states = fwd_output.hidden_states[-1].clone()
@@ -908,7 +918,7 @@ class NegDriveAgent(AbstractAgent):
             optimizer,
             schedulers=[
                 torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=warmup_steps),
-                torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps - warmup_steps, eta_min=2e-6)
+                torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps - warmup_steps, eta_min=5e-6)
             ],
             milestones=[warmup_steps]
         )

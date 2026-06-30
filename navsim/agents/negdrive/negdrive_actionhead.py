@@ -31,7 +31,7 @@ import math
 import pickle
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import numpy as np
 import torch
@@ -359,9 +359,8 @@ class NegDriveDiffusionPlanner(nn.Module):
             action_features = action_features + self.position_embedding(pos_ids)
 
         if attention_mask is not None:
-            print("检查 attention mask:")
-            print(attention_mask)
-
+            # print("检查 attention mask:")
+            # print(attention_mask)
 
             summed_embeds = self._masked_mean_pool(vl_features, attention_mask)
             vl_features_mean = summed_embeds.unsqueeze(1).repeat(1, self.config.action_horizon, 1)
@@ -654,7 +653,7 @@ class NegDriveDiffusionPlanner(nn.Module):
             attention_mask (torch.Tensor): The attention mask of shape [B, Seq], where
                 1 indicates valid tokens and 0 indicates padding.
         """
-        print("MASKED MEAN POOLING:检查")
+        # print("MASKED MEAN POOLING:检查")
 
         mask = attention_mask.unsqueeze(-1).to(hidden_states.dtype)
 
@@ -666,41 +665,37 @@ class NegDriveDiffusionPlanner(nn.Module):
 
 
 
-    def get_grpo_reward(self,
-                        actions,        # BatchFeature(data={"pred_traj"})
-                        tokens_list,
-                        ):
+    def get_grpo_reward(
+        self,
+        actions,
+        tokens_list,
+        metric_cache_loader=None,
+        return_details: bool = False,
+    ):
         """
-        Docstring for get_grpo_reward
-        
-        
+        Compute PDM-based rewards for a batch of predicted trajectories.
+
+        :param actions: BatchFeature with pred_traj
+        :param tokens_list: scene tokens aligned with batch rows
+        :param metric_cache_loader: optional MetricCacheLoader (e.g. navtest cache for val)
+        :param return_details: if True, also return per-submetric tensors [B]
         """
         final_actions = actions["pred_traj"]
-        # final_actions.detach()
+        loader = metric_cache_loader or self.metric_cache_loader
 
         unique_tokens = set(tokens_list)
         metric_cache = {}
         for token in unique_tokens:
-            # print("路径检查 1：")
-            # print(path)
-            # print(type(path))
-
-            path = self.metric_cache_loader.metric_cache_paths[token]
-            
-            # p = '/UserData/workshops/workshop-73d2bbfd-8e93-4c66-805c-d5ec14c7c431/' + path[6:] # TODO 
-
-            # print("路径检查 2：")
-            # print(p)
-
-            with lzma.open(path, 'rb') as f:
+            path = loader.metric_cache_paths[token]
+            with lzma.open(path, "rb") as f:
                 metric_cache[token] = pickle.load(f)
 
-
-        rewards = self.reward_pdm(pred_traj=final_actions,
-                                 tokens_list=unique_tokens,
-                                 cache_dict=metric_cache)
-
-        return rewards
+        return self.reward_pdm(
+            pred_traj=final_actions,
+            tokens_list=tokens_list,
+            cache_dict=metric_cache,
+            return_details=return_details,
+        )
 
 
     def _check_mask_ratio(self, attention_mask: torch.Tensor):
@@ -712,16 +707,28 @@ class NegDriveDiffusionPlanner(nn.Module):
         seq_lengths = attention_mask.sum(dim=1).tolist()
         print(f"Sequence lengths (non-padding tokens) per batch item: {seq_lengths}")
 
-
     def reward_pdm(
         self,
         pred_traj: torch.Tensor,
         tokens_list,
         cache_dict,
-    ) -> torch.Tensor:
+        return_details: bool = False,
+    ):
         """Calculates PDM scores for a batch of predicted trajectories."""
         pred_np = pred_traj.detach().cpu().numpy()
         rewards = []
+        detail_rows: Dict[str, List[float]] = {}
+        if return_details:
+            detail_rows = {
+                "no_at_fault_collisions": [],
+                "drivable_area_compliance": [],
+                "ego_progress": [],
+                "time_to_collision_within_bound": [],
+                "comfort": [],
+                "driving_direction_compliance": [],
+                "score": [],
+            }
+
         for i, token in enumerate(tokens_list):
             trajectory = Trajectory(pred_np[i])
             metric_cache = cache_dict[token]
@@ -731,37 +738,25 @@ class NegDriveDiffusionPlanner(nn.Module):
                 future_sampling=self.simulator.proposal_sampling,
                 simulator=self.simulator,
                 scorer=self.train_scorer,
-            )   
-
-            print("奖励检查：")
-
-            print(pdm_result)
-
-            """
-            PDMResults(
-            no_at_fault_collisions=np.float64(1.0), 
-            drivable_area_compliance=np.float64(1.0), 
-            ego_progress=np.float64(0.9271724173075853), 
-            time_to_collision_within_bound=np.float64(1.0), 
-            comfort=np.float64(1.0), 
-            driving_direction_compliance=np.float64(1.0), 
-            score=np.float64(0.9571602454750502)
             )
-            
-            
-            """
+            result_dict = asdict(pdm_result)
+            rewards.append(result_dict["score"])
+            if return_details:
+                for key in detail_rows:
+                    detail_rows[key].append(float(result_dict[key]))
 
+        rewards_tensor = torch.tensor(
+            rewards, device=pred_traj.device, dtype=pred_traj.dtype
+        ).detach()
 
+        if not return_details:
+            return rewards_tensor
 
-            rewards.append(asdict(pdm_result)["score"])
-
-
-
-
-
-
-        return torch.tensor(rewards, device=pred_traj.device, dtype=pred_traj.dtype).detach()
-
+        detail_tensors = {
+            key: torch.tensor(values, device=pred_traj.device, dtype=pred_traj.dtype)
+            for key, values in detail_rows.items()
+        }
+        return rewards_tensor, detail_tensors
 
     # def reward_binary_collision(
     #     self,

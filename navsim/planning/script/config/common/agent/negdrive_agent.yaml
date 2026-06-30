@@ -32,5 +32,17 @@ per_sample_rollout: 4
 bag_g: 4
 max_text_tokens: 128
 max_padding_len: 2800
+# Training rollout sampling; validation uses greedy decoding (val_do_sample=false)
+rollout_temperature: 0.7
+val_do_sample: false
 
 pass_cot_token_only: False
+
+# VLM RL algorithm: nsr (negative sample reinforcement) | grpo (group relative policy optimization)
+rl_algorithm: nsr
+
+grpo_cfg:
+  advantage_eps: 1.0e-8
+  clip_advantage_lower_quantile: 0.0
+  clip_advantage_upper_quantile: 1.0
+  skip_zero_std_groups: true
