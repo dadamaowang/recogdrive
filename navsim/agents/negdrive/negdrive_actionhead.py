@@ -544,6 +544,7 @@ class NegDriveDiffusionPlanner(nn.Module):
         init_actions: Optional[torch.Tensor] = None,
         deterministic: bool = False,
         attention_mask: Optional[torch.Tensor] = None,
+        step_noises: Optional[torch.Tensor] = None,
     ) -> BatchFeature:
         """
         Generates action trajectories via the configured sampling method.
@@ -558,6 +559,10 @@ class NegDriveDiffusionPlanner(nn.Module):
             init_actions (Optional[torch.Tensor]): An initial trajectory to start
                 the denoising from. If None, starts from pure noise.
             deterministic (bool): If True, DDIM sampling will be deterministic (eta=0).
+            step_noises (Optional[torch.Tensor]): Pre-sampled per-step noise of shape
+                [B, num_steps, H, D] for DDPM/DDIM. If None, fresh noise is drawn each step.
+                Together with init_actions this makes sampling a deterministic function of
+                the injected noise (used for common random numbers in MARS).
 
         Returns:
             BatchFeature: A batch containing the final predicted trajectory.
@@ -625,7 +630,10 @@ class NegDriveDiffusionPlanner(nn.Module):
                     attention_mask=attention_mask
                 )
 
-                noise_sample = torch.randn_like(current_actions)
+                noise_sample = (
+                    step_noises[:, i].clone().to(current_actions.dtype)
+                    if step_noises is not None else torch.randn_like(current_actions)
+                )
                 std = torch.exp(0.5 * logvar)
 
                 std = std.to(dtype)
@@ -659,7 +667,10 @@ class NegDriveDiffusionPlanner(nn.Module):
 
                 std = std.to(dtype)
 
-                noise_sample = torch.randn_like(current_actions)
+                noise_sample = (
+                    step_noises[:, i].clone().to(current_actions.dtype)
+                    if step_noises is not None else torch.randn_like(current_actions)
+                )
                 
                 if deterministic:
                     std.zero_()

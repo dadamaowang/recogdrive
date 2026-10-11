@@ -39,6 +39,7 @@ val_do_sample: false
 pass_cot_token_only: False
 
 # VLM RL algorithm: nsr (negative sample reinforcement) | grpo (group relative policy optimization)
+#                   | hybrid | psr | mars (noise-marginalized negative reinforcement)
 rl_algorithm: nsr
 
 grpo_cfg:
@@ -46,3 +47,12 @@ grpo_cfg:
   clip_advantage_lower_quantile: 0.0
   clip_advantage_upper_quantile: 1.0
   skip_zero_std_groups: true
+
+# Only used when rl_algorithm=mars (see navsim/agents/negdrive/utils/mars.py)
+mars_cfg:
+  num_planner_samples: 4        # K planner noises per CoT
+  common_random_numbers: true   # share the K noises across the G CoTs of a scene
+  progress_coef: 0.5            # beta; 0 disables the progress hinge (pure safety cost)
+  progress_min: 0.6             # safe samples with EP below this are penalized
+  baseline: none                # none (pure negative) | group_mean
+  advantage_eps: 1.0e-6

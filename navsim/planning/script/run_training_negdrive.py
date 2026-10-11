@@ -191,6 +191,10 @@ def build_experiment_config(cfg: DictConfig) -> Dict[str, Any]:
             "val_do_sample": OmegaConf.select(cfg, "agent.val_do_sample", default=None),
             "pass_cot_token_only": OmegaConf.select(cfg, "agent.pass_cot_token_only", default=None),
             "grpo_cfg": OmegaConf.to_container(cfg.agent.grpo_cfg, resolve=True),
+            "mars_cfg": OmegaConf.to_container(
+                OmegaConf.create(OmegaConf.select(cfg, "agent.mars_cfg", default=None) or {}),
+                resolve=True,
+            ),
         },
         "log_split_stats": {
             "num_train_logs": len(getattr(cfg, "train_logs", []) or []),

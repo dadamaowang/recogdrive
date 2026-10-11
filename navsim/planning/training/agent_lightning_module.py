@@ -26,10 +26,21 @@ from navsim.agents.abstract_agent import AbstractAgent
 from navsim.agents.negdrive.utils.internvl_preprocess import load_image
 from navsim.agents.negdrive.utils.utils import format_number
 from navsim.agents.negdrive.negdrive_backbone import NegDriveGenOutput
+from navsim.agents.negdrive.utils.mars import (
+    MarsConfig,
+    sample_planner_noise,
+    compute_failure,
+    compute_mars_cost,
+    compute_mars_advantages,
+    decompose_variance,
+    flip_statistics,
+)
 
 from omegaconf import DictConfig, OmegaConf
 
 import os
+import lzma
+import pickle
 from pathlib import Path
 
 from navsim.common.dataloader import MetricCacheLoader
@@ -490,6 +501,11 @@ class AgentLightningVLMRL(pl.LightningModule):
         self.grpo_clip_lower_q = float(grpo_cfg.get("clip_advantage_lower_quantile", 0.0))
         self.grpo_clip_upper_q = float(grpo_cfg.get("clip_advantage_upper_quantile", 1.0))
 
+        mars_cfg = getattr(agent, "mars_cfg", None) or {}
+        if isinstance(mars_cfg, DictConfig):
+            mars_cfg = OmegaConf.to_container(mars_cfg, resolve=True)
+        self.mars_cfg = MarsConfig.from_dict(mars_cfg)
+
         self.cfg = cfg
         self.val_metric_cache_loader = None
         if cfg is not None:
@@ -643,9 +659,12 @@ class AgentLightningVLMRL(pl.LightningModule):
             return self._training_step_datapoint_hybrid(batch, logging_prefix)
         elif self.rl_algorithm == "psr":
             return self._training_step_grpo_psr_only(batch, logging_prefix)
+        elif self.rl_algorithm == "mars":
+            return self._training_step_mars(batch, logging_prefix)
         else:
             raise ValueError(
-                f"Unknown rl_algorithm: {self.rl_algorithm!r}. Expected 'nsr' or 'grpo'."
+                f"Unknown rl_algorithm: {self.rl_algorithm!r}. "
+                "Expected 'nsr', 'grpo', 'hybrid', 'psr' or 'mars'."
             )
 
     def _collect_rollouts(
@@ -992,6 +1011,209 @@ class AgentLightningVLMRL(pl.LightningModule):
             logging_prefix=logging_prefix,
             loss_log_key=f"{logging_prefix}/grpo_pg_loss",
             empty_skip_message="没有 GRPO 更新样本",
+        )
+        self._cleanup_rollout_bundle(bundle)
+        return skipped
+
+
+    # ==============================
+    # MARS: noise-marginalized negative reinforcement
+    # ==============================
+    def _planner_num_steps(self) -> int:
+        """Number of stochastic denoising steps used by the planner's get_action."""
+        head = self.agent.action_head
+        method = head.config.sampling_method
+        if method == "ddim":
+            return int(head.ddim_steps)
+        if method == "ddpm":
+            total = head.config.ddpm_cfg.num_train_timesteps
+            step_size = total // head.config.num_inference_steps
+            return len(range(0, total, step_size))
+        return int(head.config.num_inference_steps)
+
+    @staticmethod
+    def _load_metric_cache(tokens_list: List[str], loader: MetricCacheLoader) -> Dict[str, Any]:
+        """Load each scene's metric cache once per batch (reused across G x K samples)."""
+        metric_cache = {}
+        for token in set(tokens_list):
+            with lzma.open(loader.metric_cache_paths[token], "rb") as f:
+                metric_cache[token] = pickle.load(f)
+        return metric_cache
+
+    def _collect_rollouts_mars(
+        self,
+        features: Dict[str, Tensor],
+        tokens_list: List[str],
+        metric_cache_loader: Optional[MetricCacheLoader] = None,
+        do_sample: bool = True,
+    ) -> Tuple[RolloutBundle, Dict[str, Tensor]]:
+        """
+        Run G CoT rollouts per scene and decode each CoT with K planner noises.
+
+        With common_random_numbers, the K noises (x_T and every denoising step)
+        are drawn once per scene and shared by all G CoTs, so differences between
+        CoTs of the same scene are not confounded by planner noise.
+
+        Returns the rollout bundle (for the policy update) and per-sample PDM
+        metrics of shape [B, G, K] on CPU. Does not call self.log, so it can be
+        reused outside a Trainer (see run_mars_diagnostic.py).
+        """
+        cfg = self.mars_cfg
+        head = self.agent.action_head
+        loader = metric_cache_loader or head.metric_cache_loader
+
+        pixel_values_cat, questions, num_patches_list, history_trajectory = (
+            self.agent.unpack_features_cot_prompt(features)
+        )
+        diff_dtype, diff_input = self.get_diff_input(features, history_trajectory)
+
+        B, K = len(tokens_list), cfg.num_planner_samples
+        device = history_trajectory.device
+        num_steps = self._planner_num_steps()
+        metric_cache = self._load_metric_cache(tokens_list, loader)
+
+        def draw_noise() -> Dict[str, Tensor]:
+            return sample_planner_noise(
+                B, K, num_steps,
+                head.config.action_horizon, head.config.action_dim,
+                device, diff_dtype,
+            )
+
+        shared_noise = draw_noise() if cfg.common_random_numbers else None
+
+        metric_keys = (
+            "no_at_fault_collisions",
+            "drivable_area_compliance",
+            "ego_progress",
+            "time_to_collision_within_bound",
+            "comfort",
+            "score",
+        )
+        metrics = {key: torch.zeros(B, self.G, K) for key in metric_keys}
+        all_gen_output: List[NegDriveGenOutput] = []
+
+        with torch.no_grad():
+            for g in range(self.G):
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    gen_output = self.agent.vlm.generate_text_actions(
+                        pixel_values_cat,
+                        questions,
+                        num_patches_list=num_patches_list,
+                        max_new_tokens=self.max_gen_text_tokens,
+                        do_sample=do_sample,
+                        temperature=self.rollout_temperature,
+                    )
+                    all_gen_output.append(gen_output)
+
+                    fwd_output = self.agent.vlm.forward_with_ids(
+                        pixel_values_cat,
+                        gen_output.full_ids,
+                        gen_output.attention_mask,
+                    )
+
+                last_hidden_states = fwd_output.hidden_states[-1].clone()
+                del fwd_output
+                if last_hidden_states.ndim == 2:
+                    last_hidden_states = last_hidden_states.unsqueeze(0)
+                last_hidden_states = last_hidden_states.to(diff_dtype)
+
+                noise = shared_noise if shared_noise is not None else draw_noise()
+                for k in range(K):
+                    actions = head.get_action(
+                        last_hidden_states,
+                        diff_input,
+                        init_actions=noise["init"][:, k].clone(),
+                        attention_mask=gen_output.attention_mask,
+                        step_noises=noise["steps"][:, k],
+                    )
+                    _, details = head.reward_pdm(
+                        pred_traj=actions["pred_traj"],
+                        tokens_list=tokens_list,
+                        cache_dict=metric_cache,
+                        return_details=True,
+                    )
+                    for key in metric_keys:
+                        metrics[key][:, g, k] = details[key].float().cpu()
+                    del actions, details
+
+                del last_hidden_states
+
+        del metric_cache, shared_noise
+        torch.cuda.empty_cache()
+
+        bundle = RolloutBundle(
+            all_gen_output=all_gen_output,
+            pixel_values_cat=pixel_values_cat,
+            questions=questions,
+            num_patches_list=num_patches_list,
+            history_trajectory=history_trajectory,
+            diff_input=diff_input,
+            diff_dtype=diff_dtype,
+            nc_tensor=metrics["no_at_fault_collisions"].flatten(1).to(device),
+            dac_tensor=metrics["drivable_area_compliance"].flatten(1).to(device),
+        )
+        return bundle, metrics
+
+    def _training_step_mars(
+        self,
+        batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]],
+        logging_prefix: str,
+    ) -> bool:
+        """
+        MARS: each CoT's advantage is its planner-noise-averaged cost
+            A(c) = -E_eps[ fail + beta * (1 - fail) * relu(ep_min - EP) / ep_min ]
+        (optionally minus the scene's mean over CoTs). Only CoTs with |A| > eps
+        are updated, so always-safe, always-progressing CoTs cost no backward pass.
+        """
+        cfg = self.mars_cfg
+        features, _targets, tokens_list = batch
+        bundle, metrics = self._collect_rollouts_mars(features, tokens_list)
+
+        fail = compute_failure(
+            metrics["no_at_fault_collisions"], metrics["drivable_area_compliance"]
+        )
+        cost = compute_mars_cost(
+            fail, metrics["ego_progress"], cfg.progress_coef, cfg.progress_min
+        )
+        advantages = compute_mars_advantages(cost, cfg.baseline)  # [B, G]
+
+        self._log_safety_rollout_metrics(bundle.nc_tensor, bundle.dac_tensor, logging_prefix)
+        log_values = {
+            "mars_cost": cost.mean().item(),
+            "mars_adv_mean": advantages.mean().item(),
+            "mars_ego_progress": metrics["ego_progress"].mean().item(),
+            "mars_pdm_score": metrics["score"].mean().item(),
+        }
+        log_values.update({f"mars_{k}": v for k, v in flip_statistics(fail).items()})
+        log_values.update({f"mars_fail_{k}": v for k, v in decompose_variance(fail).items()})
+        log_values.update({f"mars_score_{k}": v for k, v in decompose_variance(metrics["score"]).items()})
+
+        update_samples: List[Optional[Tuple[int, int, float]]] = []
+        batch_size = advantages.shape[0]
+        for g in range(self.G):
+            for b in range(batch_size):
+                adv = advantages[b, g].item()
+                if abs(adv) > cfg.advantage_eps:
+                    update_samples.append((b, g, adv))
+        log_values["mars_num_updates"] = float(len(update_samples))
+        print(f"MARS 更新样本数目：{len(update_samples)} / {batch_size * self.G}")
+
+        for name, value in log_values.items():
+            self.log(
+                f"{logging_prefix}/{name}",
+                value,
+                on_step=True,
+                on_epoch=True,
+                prog_bar=name in ("mars_cost", "mars_num_updates"),
+                sync_dist=True,
+            )
+
+        skipped = self._run_distributed_manual_updates(
+            update_samples=update_samples,
+            bundle=bundle,
+            logging_prefix=logging_prefix,
+            loss_log_key=f"{logging_prefix}/mars_pg_loss",
+            empty_skip_message="没有 MARS 更新样本",
         )
         self._cleanup_rollout_bundle(bundle)
         return skipped
