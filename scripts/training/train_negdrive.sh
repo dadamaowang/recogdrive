@@ -5,7 +5,7 @@
 
 
 source ~/.bashrc
-conda activate nd
+conda activate ndfl03
 which python
 
 
@@ -49,17 +49,21 @@ HIGH_RISK_VAL_TOKENS_PATH="${NAVSIM_DEVKIT_ROOT}/scripts/filter_high_risk_scenes
 VAL_METRIC_CACHE_PATH="/root/navsim_workspace/exps/metric_cache"
 
 # RL algorithm: nsr | grpo
-RL_ALGORITHM=grpo
+RL_ALGORITHM=nsr
+
 if [ "$RL_ALGORITHM" = "grpo" ]; then
     EXP_NAME=0617_yrs_GRPO-train
 else
     EXP_NAME=0613_yrs_NSR-train
 fi
-FAST_DEV_RUN=false
+
+EXP_NAME=testenv
+
+FAST_DEV_RUN=true
 
 MASTER_PORT=63669
 PORT=63665
-GPUS=8
+GPUS=1
 
 MASTER_PORT=${MASTER_PORT:-63669}
 PORT=${PORT:-63665}
@@ -68,12 +72,11 @@ export GPUS_PER_NODE=${GPUS_PER_NODE:-8}
 export MASTER_PORT=${MASTER_PORT}
 export PORT=${PORT}
 
-# SwanLab experiment tracking (国内云端，无需代理)
-# 首次使用：在 https://swanlab.cn 获取 API Key，或执行 swanlab login
-export SWANLAB_API_KEY="oKEbC9aKSzvCLOISQ3DLL"
-# 离线模式（不上传云端，本地 swanboard 查看）：export SWANLAB_MODE=offline
+
+export SWANLAB_API_KEY="TWmPzvO5E3jGsuuAF9R1a"
 export SWANLAB_MODE=${SWANLAB_MODE:-online}
 
+export HYDRA_FULL_ERROR=1
 torchrun \
     --nnodes=1 \
     --nproc_per_node=${GPUS} \
@@ -107,7 +110,7 @@ torchrun \
     agent.vlm_size="small" \
     agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
     agent.dit_type="small" \
-    agent.per_sample_rollout=6 \
+    agent.per_sample_rollout=2 \
     agent.bag_g=2 \
     agent.max_text_tokens=512 \
     agent.max_padding_len=2800 \

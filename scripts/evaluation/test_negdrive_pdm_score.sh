@@ -15,12 +15,12 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 
 TRAIN_TEST_SPLIT=navtest
-EXP_NAME=0623_grpo_iter405_test
+EXP_NAME=nsr_99_test
 
 
 export MASTER_PORT=63669
 export PORT=63665
-export GPUS=4
+export GPUS=1
 export GPUS_PER_NODE=$GPUS
 
 export NCCL_IB_DISABLE=0
@@ -54,7 +54,7 @@ torchrun \
     force_cache_computation=false \
     agent.vlm_path="/root/navsim_workspace/models/ReCogDrive-VLM-2B" \
     agent.vlm_size="small" \
-    agent.vlm_lora_path="/root/navsim_workspace/exps/0617_yrs_GRPO-train/tmp/iter_405_lora" \
+    agent.vlm_lora_path="/root/navsim_workspace/exps/0613_yrs_NSR-train/2026.06.19.13.42.42_NSR/checkpoints/iter_99_lora/" \
     agent.diff_path="/root/navsim_workspace/models/ReCogDrive-Dif-2B/ReCogDrive_Diffusion_Planner_2B_RL.ckpt"  \
     agent.dit_type="small" \
     agent.pass_cot_token_only=true \
@@ -75,3 +75,5 @@ torchrun \
 # /root/navsim_workspace/exps/0613_yrs_NSR-train/2026.06.19.13.42.42_NSR/checkpoints/iter_405_lora
 
 
+# /root/navsim_workspace/exps/0613_yrs_NSR-train/2026.06.19.13.42.42_NSR/checkpoints/iter_81_lora/
+# 90, 99, 108

@@ -1,0 +1,19 @@
+{
+  "input_csv": "/root/recogdrive/2026.06.12.22.51.17.csv",
+  "collision_threshold": 1.0,
+  "drivable_threshold": 1.0,
+  "include_invalid": false,
+  "total_rows_excluding_average": 103288,
+  "candidate_scenes": 103288,
+  "high_risk_count": 1963,
+  "high_risk_ratio": 0.01900511192006816,
+  "breakdown": {
+    "collision_only": 476,
+    "drivable_only": 665,
+    "both": 22,
+    "collision_score_0.0": 422,
+    "collision_score_0.5": 76
+  },
+  "invalid_excluded": 0,
+  "duplicate_tokens_found": 0
+}

@@ -50,6 +50,8 @@ PDM_PERFECT_SCORE = 1.0
 BINARY_SAFE_REWARD = 1.0
 BINARY_UNSAFE_REWARD = -1.0
 
+PSR_SUCCESS_ADVANTAGE = 1.0
+
 
 @dataclass
 class RolloutBundle:
@@ -634,11 +636,17 @@ class AgentLightningVLMRL(pl.LightningModule):
         """Dispatch to NSR or GRPO training step."""
         if self.rl_algorithm == "nsr":
             return self._training_step_nsr(batch, logging_prefix)
-        if self.rl_algorithm == "grpo":
+        elif self.rl_algorithm == "grpo":
             return self._training_step_grpo(batch, logging_prefix)
-        raise ValueError(
-            f"Unknown rl_algorithm: {self.rl_algorithm!r}. Expected 'nsr' or 'grpo'."
-        )
+        elif self.rl_algorithm == "hybrid":
+            # return self._training_step_hybrid(batch, logging_prefix)
+            return self._training_step_datapoint_hybrid(batch, logging_prefix)
+        elif self.rl_algorithm == "psr":
+            return self._training_step_grpo_psr_only(batch, logging_prefix)
+        else:
+            raise ValueError(
+                f"Unknown rl_algorithm: {self.rl_algorithm!r}. Expected 'nsr' or 'grpo'."
+            )
 
     def _collect_rollouts(
         self,
@@ -987,6 +995,320 @@ class AgentLightningVLMRL(pl.LightningModule):
         )
         self._cleanup_rollout_bundle(bundle)
         return skipped
+
+
+    def _training_step_hybrid(
+        self,
+        batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]],
+        logging_prefix: str,
+    ) -> bool:
+        """NSR: update only on NC/DAC failure rollouts with fixed advantage -1."""
+        features, _targets, tokens_list = batch
+        bundle = self._collect_rollouts(features, tokens_list, logging_prefix)
+
+        nc_tensor = bundle.nc_tensor
+        dac_tensor = bundle.dac_tensor
+        failure_mask = (nc_tensor < PDM_PERFECT_SCORE) | (dac_tensor < PDM_PERFECT_SCORE)
+
+        num_failures = failure_mask.sum().item()
+        print(f"负样本数目：{num_failures}")
+        self.log(
+            f"{logging_prefix}/num_failures",
+            int(num_failures),
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+
+        # GRPO advantages computed over the full group (used only for non-failure samples)
+        rewards = compute_binary_safety_rewards(nc_tensor, dac_tensor)
+        advantages, valid_group_mask = compute_grpo_group_advantages(
+            rewards,
+            eps=self.grpo_advantage_eps,
+            skip_zero_std_groups=self.grpo_skip_zero_std_groups,
+            clip_lower_q=self.grpo_clip_lower_q,
+            clip_upper_q=self.grpo_clip_upper_q,
+        )
+
+        num_valid_groups = int(valid_group_mask.sum().item())
+        num_zero_std_groups = int((~valid_group_mask).sum().item())
+
+        self.log(
+            f"{logging_prefix}/grpo_valid_groups",
+            num_valid_groups,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=False,
+            sync_dist=True,
+        )
+        self.log(
+            f"{logging_prefix}/grpo_zero_std_groups",
+            num_zero_std_groups,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=False,
+            sync_dist=True,
+        )
+        self.log(
+            f"{logging_prefix}/grpo_mean_reward",
+            rewards.mean(),
+            on_step=True,
+            on_epoch=True,
+            prog_bar=False,
+            sync_dist=True,
+        )
+        self._log_safety_rollout_metrics(nc_tensor, dac_tensor, logging_prefix)
+
+        update_samples: List[Optional[Tuple[int, int, float]]] = []
+        batch_size = failure_mask.shape[0]
+
+        num_nsr_updates = 0
+        num_grpo_updates = 0
+
+        # 1) Failure rollouts: always update with fixed NSR advantage.
+        for g in range(self.G):
+            for b in range(batch_size):
+                if failure_mask[b, g]:
+                    update_samples.append((b, g, NSR_FAILURE_ADVANTAGE))
+                    num_nsr_updates += 1
+
+        # 2) Non-failure rollouts: update with GRPO group-relative advantage,
+        #    subject to the same validity/eps filtering as plain GRPO.
+        for b in range(batch_size):
+            if not valid_group_mask[b]:
+                continue
+            for g in range(self.G):
+                if failure_mask[b, g]:
+                    continue
+                adv = advantages[b, g].item()
+                if abs(adv) <= self.grpo_advantage_eps:
+                    continue
+                update_samples.append((b, g, adv))
+                num_grpo_updates += 1
+
+        num_updates = len(update_samples)
+        print(f"Hybrid 更新样本数目：NSR={num_nsr_updates} GRPO={num_grpo_updates} 总计={num_updates}")
+        self.log(
+            f"{logging_prefix}/hybrid_num_nsr_updates",
+            num_nsr_updates,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=False,
+            sync_dist=True,
+        )
+        self.log(
+            f"{logging_prefix}/hybrid_num_grpo_updates",
+            num_grpo_updates,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=False,
+            sync_dist=True,
+        )
+        self.log(
+            f"{logging_prefix}/hybrid_num_updates",
+            num_updates,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+
+        skipped = self._run_distributed_manual_updates(
+            update_samples=update_samples,
+            bundle=bundle,
+            logging_prefix=logging_prefix,
+            loss_log_key=f"{logging_prefix}/hybrid_pg_loss",
+            empty_skip_message="没有 Hybrid 更新样本",
+        )
+        self._cleanup_rollout_bundle(bundle)
+
+
+        return skipped
+
+
+    def _training_step_datapoint_hybrid(
+        self,
+        batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]],
+        logging_prefix: str,
+    ) -> bool:
+        """Hybrid (datapoint-level split, opposite logic):
+        - If a datapoint has ALL failure rollouts  → all G rollouts use NSR (fixed -1).
+        - If a datapoint has ANY success rollout   → all G rollouts use GRPO.
+        - If a datapoint has ALL success rollouts  → all G rollouts use PSR (fixed +1).
+        """
+        features, _targets, tokens_list = batch
+        bundle = self._collect_rollouts(features, tokens_list, logging_prefix)
+
+        nc_tensor = bundle.nc_tensor
+        dac_tensor = bundle.dac_tensor
+        failure_mask = (nc_tensor < PDM_PERFECT_SCORE) | (dac_tensor < PDM_PERFECT_SCORE)
+
+        # Shape: (batch_size,)
+        datapoint_all_failure = failure_mask.all(dim=1)   # ALL G failed
+        datapoint_all_success = (~failure_mask).all(dim=1) # ALL G succeeded
+        datapoint_mixed       = ~datapoint_all_failure & ~datapoint_all_success  # some success, some failure
+
+        num_nsr_datapoints  = int(datapoint_all_failure.sum().item())
+        num_psr_datapoints  = int(datapoint_all_success.sum().item())
+        num_grpo_datapoints = int(datapoint_mixed.sum().item())
+        print(f"NSR  datapoints (all failure): {num_nsr_datapoints}")
+        print(f"PSR  datapoints (all success): {num_psr_datapoints}")
+        print(f"GRPO datapoints (mixed):       {num_grpo_datapoints}")
+
+        rewards = compute_binary_safety_rewards(nc_tensor, dac_tensor)
+        advantages, valid_group_mask = compute_grpo_group_advantages(
+            rewards,
+            eps=self.grpo_advantage_eps,
+            skip_zero_std_groups=self.grpo_skip_zero_std_groups,
+            clip_lower_q=self.grpo_clip_lower_q,
+            clip_upper_q=self.grpo_clip_upper_q,
+        )
+
+        self._log_safety_rollout_metrics(nc_tensor, dac_tensor, logging_prefix)
+        self.log(f"{logging_prefix}/grpo_mean_reward",  rewards.mean(),                    on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log(f"{logging_prefix}/grpo_valid_groups", int(valid_group_mask.sum().item()), on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log(f"{logging_prefix}/hybrid_dp2_num_nsr_datapoints",  num_nsr_datapoints,  on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log(f"{logging_prefix}/hybrid_dp2_num_psr_datapoints",  num_psr_datapoints,  on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log(f"{logging_prefix}/hybrid_dp2_num_grpo_datapoints", num_grpo_datapoints, on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+
+        update_samples: List[Optional[Tuple[int, int, float]]] = []
+        batch_size = failure_mask.shape[0]
+        num_nsr_updates  = 0
+        num_psr_updates  = 0
+        num_grpo_updates = 0
+
+        for b in range(batch_size):
+            if datapoint_all_failure[b]:
+                # ── NSR branch: all G rollouts, fixed -1 ──
+                for g in range(self.G):
+                    update_samples.append((b, g, NSR_FAILURE_ADVANTAGE))
+                    num_nsr_updates += 1
+
+            elif datapoint_all_success[b]:
+                # ── PSR branch: all G rollouts, fixed +1 ──
+                for g in range(self.G):
+                    update_samples.append((b, g, PSR_SUCCESS_ADVANTAGE))
+                    num_psr_updates += 1
+
+            else:
+                # ── GRPO branch: mixed datapoint, group-relative advantage ──
+                if not valid_group_mask[b]:
+                    continue
+                for g in range(self.G):
+                    adv = advantages[b, g].item()
+                    if abs(adv) <= self.grpo_advantage_eps:
+                        continue
+                    update_samples.append((b, g, adv))
+                    num_grpo_updates += 1
+
+        num_updates = len(update_samples)
+        print(f"Hybrid-datapoint-v2 更新样本: NSR={num_nsr_updates} PSR={num_psr_updates} GRPO={num_grpo_updates} 总计={num_updates}")
+        self.log(f"{logging_prefix}/hybrid_dp2_num_nsr_updates",  num_nsr_updates,  on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log(f"{logging_prefix}/hybrid_dp2_num_psr_updates",  num_psr_updates,  on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log(f"{logging_prefix}/hybrid_dp2_num_grpo_updates", num_grpo_updates, on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log(f"{logging_prefix}/hybrid_dp2_num_updates",      num_updates,      on_step=True, on_epoch=True, prog_bar=True,  sync_dist=True)
+
+        skipped = self._run_distributed_manual_updates(
+            update_samples=update_samples,
+            bundle=bundle,
+            logging_prefix=logging_prefix,
+            loss_log_key=f"{logging_prefix}/hybrid_dp2_pg_loss",
+            empty_skip_message="没有 Hybrid-datapoint-v2 更新样本",
+        )
+        self._cleanup_rollout_bundle(bundle)
+        
+        return skipped
+
+
+    def _training_step_grpo_psr_only(
+        self,
+        batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]],
+        logging_prefix: str,
+    ) -> bool:
+        """Hybrid (datapoint-level split, opposite logic):
+        - If a datapoint has ALL failure rollouts  → drop
+        - If a datapoint has ANY success rollout   → all G rollouts use GRPO.
+        - If a datapoint has ALL success rollouts  → all G rollouts use PSR (fixed +1).
+        """
+        features, _targets, tokens_list = batch
+        bundle = self._collect_rollouts(features, tokens_list, logging_prefix)
+
+        nc_tensor = bundle.nc_tensor
+        dac_tensor = bundle.dac_tensor
+        failure_mask = (nc_tensor < PDM_PERFECT_SCORE) | (dac_tensor < PDM_PERFECT_SCORE)
+
+        # Shape: (batch_size,)
+        datapoint_all_failure = failure_mask.all(dim=1)
+        datapoint_all_success = (~failure_mask).all(dim=1)
+        datapoint_mixed       = ~datapoint_all_failure & ~datapoint_all_success
+
+        num_dropped_datapoints = int(datapoint_all_failure.sum().item())
+        num_psr_datapoints     = int(datapoint_all_success.sum().item())
+        num_grpo_datapoints    = int(datapoint_mixed.sum().item())
+        print(f"Dropped datapoints (all failure): {num_dropped_datapoints}")
+        print(f"PSR    datapoints (all success):  {num_psr_datapoints}")
+        print(f"GRPO   datapoints (mixed):        {num_grpo_datapoints}")
+
+        rewards = compute_binary_safety_rewards(nc_tensor, dac_tensor)
+        advantages, valid_group_mask = compute_grpo_group_advantages(
+            rewards,
+            eps=self.grpo_advantage_eps,
+            skip_zero_std_groups=self.grpo_skip_zero_std_groups,
+            clip_lower_q=self.grpo_clip_lower_q,
+            clip_upper_q=self.grpo_clip_upper_q,
+        )
+
+        self._log_safety_rollout_metrics(nc_tensor, dac_tensor, logging_prefix)
+        self.log(f"{logging_prefix}/grpo_mean_reward",               rewards.mean(),                    on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log(f"{logging_prefix}/grpo_valid_groups",              int(valid_group_mask.sum().item()), on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log(f"{logging_prefix}/hybrid_dp3_num_dropped_datapoints", num_dropped_datapoints,         on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log(f"{logging_prefix}/hybrid_dp3_num_psr_datapoints",     num_psr_datapoints,             on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log(f"{logging_prefix}/hybrid_dp3_num_grpo_datapoints",    num_grpo_datapoints,            on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+
+        update_samples: List[Optional[Tuple[int, int, float]]] = []
+        batch_size = failure_mask.shape[0]
+        num_psr_updates  = 0
+        num_grpo_updates = 0
+
+        for b in range(batch_size):
+            if datapoint_all_failure[b]:
+                # ── Drop: no update ──
+                continue
+
+            elif datapoint_all_success[b]:
+                # ── PSR branch: all G rollouts, fixed +1 ──
+                for g in range(self.G):
+                    update_samples.append((b, g, PSR_SUCCESS_ADVANTAGE))
+                    num_psr_updates += 1
+
+            else:
+                # ── GRPO branch: mixed datapoint, group-relative advantage ──
+                if not valid_group_mask[b]:
+                    continue
+                for g in range(self.G):
+                    adv = advantages[b, g].item()
+                    if abs(adv) <= self.grpo_advantage_eps:
+                        continue
+                    update_samples.append((b, g, adv))
+                    num_grpo_updates += 1
+
+        num_updates = len(update_samples)
+        print(f"Hybrid-datapoint-v3 更新样本: PSR={num_psr_updates} GRPO={num_grpo_updates} 总计={num_updates}")
+        self.log(f"{logging_prefix}/hybrid_dp3_num_psr_updates",  num_psr_updates,  on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log(f"{logging_prefix}/hybrid_dp3_num_grpo_updates", num_grpo_updates, on_step=True, on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log(f"{logging_prefix}/hybrid_dp3_num_updates",      num_updates,      on_step=True, on_epoch=True, prog_bar=True,  sync_dist=True)
+
+        skipped = self._run_distributed_manual_updates(
+            update_samples=update_samples,
+            bundle=bundle,
+            logging_prefix=logging_prefix,
+            loss_log_key=f"{logging_prefix}/hybrid_dp3_pg_loss",
+            empty_skip_message="没有 Hybrid-datapoint-v3 更新样本",
+        )
+        self._cleanup_rollout_bundle(bundle)
+        return skipped
+
 
     def unpack_features(self, features: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, List[str], List[int]]:
         """

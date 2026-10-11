@@ -61,7 +61,7 @@ def main() -> None:
     parser.add_argument(
         "--tokens_path",
         type=Path,
-        default=Path("scripts/filter_high_risk_scenes/high_risk_train/high_risk_train.txt"),
+        default=Path("scripts/filter_high_risk_scenes/high_risk_and_normal_2/high_risk_tokens.txt"),
         help="高风险 token 列表（一行一个 token）",
     )
     parser.add_argument(

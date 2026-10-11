@@ -29,6 +29,7 @@ import copy
 import lzma
 import math
 import pickle
+import dataclasses
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
@@ -87,11 +88,53 @@ class DDIMConfig:
 
 
 
-@dataclass
+# NOTE 环境为 "nd" 时使用原版；
+# @dataclass
+# class NegDriveDiffusionPlannerConfig(PretrainedConfig):
+#     """A refined configuration for the ReCogDriveDiffusionPlanner."""
+
+#     # --- Core Architecture ---
+#     diffusion_model_cfg: dict = field(default_factory=dict)      # 环境为 "nd" 时使用这个
+#     # diffusion_model_cfg: dict = None
+
+#     input_embedding_dim: int = 1536
+#     hidden_size: int = 1024
+#     action_dim: int = 3
+#     action_horizon: int = 8
+#     add_pos_embed: bool = True
+#     max_seq_len: int = 8
+#     ego_status_encoder_type: Literal['mlp', 'attention'] = 'mlp'
+
+#     sampling_method: Literal['flow', 'ddpm', 'ddim'] = 'ddim'
+#     num_inference_steps: int = 5
+#     model_dtype: str = "float16"
+#     grpo: bool = False
+#     vlm_size: str = 'large'     
+    
+#     tune_projector: bool = True
+#     tune_diffusion_model: bool = True
+    
+#     flow_cfg: FlowConfig = field(default_factory=FlowConfig)
+#     ddpm_cfg: DDPMConfig = field(default_factory=DDPMConfig)
+#     ddim_cfg: DDIMConfig = field(default_factory=DDIMConfig)
+
+#     """NOTE
+#     For reward 
+#     """
+#     metric_cache_path: str = "/path/to/metric_cache_train"
+#     scorer_config: PDMScorerConfig = field(default_factory=lambda: PDMScorerConfig(
+#         progress_weight=10.0, ttc_weight=5.0, comfortable_weight=2.0
+#     ))
+
+
+
 class NegDriveDiffusionPlannerConfig(PretrainedConfig):
     """A refined configuration for the ReCogDriveDiffusionPlanner."""
+
     # --- Core Architecture ---
-    diffusion_model_cfg: dict = field(default_factory=dict)
+    diffusion_model_cfg: dict = field(default_factory=dict)      # 环境为 "nd" 时使用这个
+    # diffusion_model_cfg: dict = None
+
     input_embedding_dim: int = 1536
     hidden_size: int = 1024
     action_dim: int = 3
@@ -120,6 +163,11 @@ class NegDriveDiffusionPlannerConfig(PretrainedConfig):
     scorer_config: PDMScorerConfig = field(default_factory=lambda: PDMScorerConfig(
         progress_weight=10.0, ttc_weight=5.0, comfortable_weight=2.0
     ))
+
+
+# for ndfl02 环境
+if not dataclasses.is_dataclass(NegDriveDiffusionPlannerConfig):
+    NegDriveDiffusionPlannerConfig = dataclass(NegDriveDiffusionPlannerConfig)
 
 
 class NegDriveDiffusionPlanner(nn.Module):

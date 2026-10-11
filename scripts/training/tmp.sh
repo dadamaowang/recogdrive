@@ -1,18 +1,16 @@
 
-# NOTEICE
-# 1. metric_cache 路径检查
-# 2. default_training 里超参都检查一下
+# hybrid 方法；50 % 高风险 50 % normal 的训练集
 
 
 source ~/.bashrc
-conda activate ndfl02
+conda activate nd
 which python
 
 
-# # open clash (optional, not required for SwanLab)
+# open clash (optional, not required for SwanLab)
 # ~/clash -d ~/.config/clash/ > clash_job.log 2>&1 &
 # CLASH_PID=$!
-
+#
 # echo "Waiting for Clash to start..."
 # for i in {1..15}; do
 #     if ss -tuln | grep -q ":7890"; then
@@ -21,9 +19,9 @@ which python
 #     fi
 #     sleep 1
 # done
-
+#
 # ps aux | grep clash
-
+#
 # export http_proxy=http://127.0.0.1:7890
 # export https_proxy=http://127.0.0.1:7890
 
@@ -39,30 +37,32 @@ export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 # export CACHE_PATH=null
 
-
 TRAIN_TEST_SPLIT=navtrain
 # 【训练集选择】full: 全量 train_logs | high_risk: trainval 高风险子集
 TRAIN_SCENE_SUBSET=high_risk
-HIGH_RISK_TOKENS_PATH="${NAVSIM_DEVKIT_ROOT}/scripts/filter_high_risk_scenes/high_risk_train/high_risk_train.txt"
+HIGH_RISK_TOKENS_PATH="${NAVSIM_DEVKIT_ROOT}/scripts/filter_high_risk_scenes/high_risk_and_normal_2/high_risk_tokens.txt"
 # 【验证集选择】full: 全量 val_logs | high_risk_test: navtest 高风险子集
 VAL_SCENE_SUBSET=high_risk_test
 HIGH_RISK_VAL_TOKENS_PATH="${NAVSIM_DEVKIT_ROOT}/scripts/filter_high_risk_scenes/high_risk_test/high_risk_test.txt"
 VAL_METRIC_CACHE_PATH="/root/navsim_workspace/exps/metric_cache"
 
-# RL algorithm: nsr | grpo
-RL_ALGORITHM=nsr
-if [ "$RL_ALGORITHM" = "grpo" ]; then
-    EXP_NAME=0617_yrs_GRPO-train
-else
-    EXP_NAME=0613_yrs_NSR-train
-fi
+# RL algorithm: nsr | grpo | hybrid
+RL_ALGORITHM=psr
+# if [ "$RL_ALGORITHM" = "grpo" ]; then
+#     EXP_NAME=0617_yrs_GRPO-train
+# else
+#     EXP_NAME=0613_yrs_NSR-train
+# fi
 
-EXP_NAME=test_env_ndfl02
-FAST_DEV_RUN=true
+EXP_NAME=0702_hpsr_800data
+
+
+
+FAST_DEV_RUN=false
 
 MASTER_PORT=63669
 PORT=63665
-GPUS=2
+GPUS=1
 
 MASTER_PORT=${MASTER_PORT:-63669}
 PORT=${PORT:-63665}
@@ -75,10 +75,8 @@ export PORT=${PORT}
 # 首次使用：在 https://swanlab.cn 获取 API Key，或执行 swanlab login
 export SWANLAB_API_KEY="oKEbC9aKSzvCLOISQ3DLL"
 # 离线模式（不上传云端，本地 swanboard 查看）：export SWANLAB_MODE=offline
-export SWANLAB_MODE=${SWANLAB_MODE:-offline}
+export SWANLAB_MODE=${SWANLAB_MODE:-online}
 
-
-HYDRA_FULL_ERROR=1
 torchrun \
     --nnodes=1 \
     --nproc_per_node=${GPUS} \

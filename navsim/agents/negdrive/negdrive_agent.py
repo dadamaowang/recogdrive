@@ -243,10 +243,10 @@ class NegDriveAgent(AbstractAgent):
         self._lr = vlm_lr
 
         self.rl_algorithm = rl_algorithm.lower()
-        if self.rl_algorithm not in ("nsr", "grpo"):
-            raise ValueError(
-                f"Unknown rl_algorithm: {rl_algorithm!r}. Expected 'nsr' or 'grpo'."
-            )
+        # if self.rl_algorithm not in ("nsr", "grpo", "hybrid"):
+        #     raise ValueError(
+        #         f"Unknown rl_algorithm: {rl_algorithm!r}. Expected 'nsr' or 'grpo' or 'hybrid'."
+        #     )
         self.grpo_cfg = dict(grpo_cfg) if grpo_cfg is not None else {}
 
         self.per_sample_rollout = per_sample_rollout

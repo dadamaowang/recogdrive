@@ -457,7 +457,8 @@ def main(cfg: DictConfig) -> None:
     experiment_config = build_experiment_config(cfg)
     swanlab_mode = os.environ.get("SWANLAB_MODE", "online")
     swanlab_logger = SwanLabLogger(
-        project="negdrive",
+        project="NegDriveComplete",
+        workspace="Xnq",
         experiment_name=cfg.experiment_name,
         config=experiment_config,
         log_dir=cfg.output_dir,
