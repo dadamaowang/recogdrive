@@ -1269,6 +1269,43 @@ class AgentLightningVLMRL(pl.LightningModule):
             ids.add(im_end)
         return [i for i in ids if i is not None]
 
+    def score_hidden_states(
+        self,
+        b: int,
+        hidden: torch.Tensor,
+        mask: torch.Tensor,
+        noise: Dict[str, Tensor],
+        diff_input: BatchFeature,
+        token: str,
+        metric_cache: Dict[str, Any],
+    ) -> torch.Tensor:
+        """
+        Decode one scene's VLM hidden states [1, L, D] under its K planner noises
+        and return the per-noise MARS cost [K] (CPU).
+        """
+        mars = self.mars_cfg
+        head = self.agent.action_head
+        K = mars.num_planner_samples
+        diff_input_b = BatchFeature({k: v[b:b + 1].repeat(K, 1) for k, v in diff_input.items()})
+        actions = head.get_action(
+            hidden.repeat(K, 1, 1),
+            diff_input_b,
+            init_actions=noise["init"][b].clone(),
+            attention_mask=mask.repeat(K, 1),
+            step_noises=noise["steps"][b],
+        )
+        _, details = head.reward_pdm(
+            pred_traj=actions["pred_traj"],
+            tokens_list=[token] * K,
+            cache_dict=metric_cache,
+            return_details=True,
+        )
+        fail = compute_failure(details["no_at_fault_collisions"], details["drivable_area_compliance"])
+        return compute_mars_cost(
+            fail.float().cpu(), details["ego_progress"].float().cpu(),
+            mars.progress_coef, mars.progress_min,
+        )
+
     def _probe_prefix_potentials(
         self,
         b: int,
@@ -1278,7 +1315,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         diff_input: BatchFeature,
         tokens_list: List[str],
         metric_cache: Dict[str, Any],
-        phi_full: float,
+        full_costs: torch.Tensor,
     ) -> Dict[str, Any]:
         """
         Potentials Phi at the CoT prefix boundaries of scene b's rollout.
@@ -1287,12 +1324,11 @@ class AgentLightningVLMRL(pl.LightningModule):
         truncated to prompt_len + boundary, under the same K planner noises as the
         full rollout, then scored with PDM. The planner's cross-attention has no
         key mask, so prefixes are truncated (not masked) to keep later tokens out.
-        Phi at the last boundary is the full rollout's value (phi_full).
+        The last boundary reuses the full rollout's per-noise costs (full_costs [K]).
+        Returns phi [P+1] and the per-noise costs [P+1, K] behind it.
         """
-        mars, pps = self.mars_cfg, self.pps_cfg
-        head = self.agent.action_head
+        pps = self.pps_cfg
         tokenizer = self.agent.vlm.tokenizer
-        K = mars.num_planner_samples
         prompt_len = gen_output.response_start_idx
 
         response_ids = gen_output.full_ids[b, prompt_len:].tolist()
@@ -1304,37 +1340,22 @@ class AgentLightningVLMRL(pl.LightningModule):
             use_markers=pps.use_stage_markers,
         )
 
-        diff_input_b = BatchFeature({k: v[b:b + 1].repeat(K, 1) for k, v in diff_input.items()})
-        phis = []
+        costs = []
         for boundary in boundaries[:-1]:
             end = prompt_len + boundary
-            hidden = last_hidden_states[b:b + 1, :end].repeat(K, 1, 1)
-            mask = gen_output.attention_mask[b:b + 1, :end].repeat(K, 1)
-            actions = head.get_action(
-                hidden,
-                diff_input_b,
-                init_actions=noise["init"][b].clone(),
-                attention_mask=mask,
-                step_noises=noise["steps"][b],
-            )
-            _, details = head.reward_pdm(
-                pred_traj=actions["pred_traj"],
-                tokens_list=[tokens_list[b]] * K,
-                cache_dict=metric_cache,
-                return_details=True,
-            )
-            fail = compute_failure(details["no_at_fault_collisions"], details["drivable_area_compliance"])
-            cost = compute_mars_cost(
-                fail.float().cpu(), details["ego_progress"].float().cpu(),
-                mars.progress_coef, mars.progress_min,
-            )
-            phis.append(-cost.mean().item())
-            del actions, details, hidden, mask
-        phis.append(phi_full)
+            costs.append(self.score_hidden_states(
+                b,
+                last_hidden_states[b:b + 1, :end],
+                gen_output.attention_mask[b:b + 1, :end],
+                noise, diff_input, tokens_list[b], metric_cache,
+            ))
+        costs.append(full_costs.float().cpu())
+        costs = torch.stack(costs)  # [P+1, K]
 
         return {
             "boundaries": boundaries,
-            "phi": torch.tensor(phis, dtype=torch.float32),
+            "phi": -costs.mean(dim=1),
+            "costs": costs,
             "num_real": num_real,
             "num_total": num_total,
             "segments": ["".join(pieces[lo:hi]) for lo, hi in zip(boundaries[:-1], boundaries[1:])],
@@ -1363,8 +1384,13 @@ class AgentLightningVLMRL(pl.LightningModule):
                     continue
                 probes[(b, g)] = self._probe_prefix_potentials(
                     b, last_hidden_states, gen_output, noise, diff_input,
-                    tokens_list, metric_cache, phi_full=-cost_g[b].mean().item(),
+                    tokens_list, metric_cache, full_costs=cost_g[b],
                 )
+                if self._probe_extra_hook is not None:
+                    self._probe_extra_hook(
+                        b, g, probes[(b, g)], last_hidden_states, gen_output,
+                        noise, diff_input, metric_cache,
+                    )
 
         return hook
 
@@ -1375,8 +1401,14 @@ class AgentLightningVLMRL(pl.LightningModule):
         probe: str,
         metric_cache_loader: Optional[MetricCacheLoader] = None,
         do_sample: bool = True,
+        extra_hook=None,
     ) -> Tuple[RolloutBundle, Dict[str, Tensor], Dict[Tuple[int, int], Dict[str, Any]]]:
-        """MARS rollouts plus prefix potentials for the rollouts selected by `probe`."""
+        """
+        MARS rollouts plus prefix potentials for the rollouts selected by `probe`.
+        extra_hook(b, g, probe, last_hidden_states, gen_output, noise, diff_input,
+        metric_cache) runs after each probe (used by the pilot's counterfactual test).
+        """
+        self._probe_extra_hook = extra_hook
         probes: Dict[Tuple[int, int], Dict[str, Any]] = {}
         bundle, metrics = self._collect_rollouts_mars(
             features, tokens_list,
