@@ -82,9 +82,10 @@ class NegDriveAgent(AbstractAgent):
         diff_path: Optional[str] = None,
 
         # ========== RL ==========
-        rl_algorithm: str = "nsr",   # nsr | grpo | hybrid | psr | mars
+        rl_algorithm: str = "nsr",   # nsr | grpo | hybrid | psr | mars | pps
         grpo_cfg: Optional[Dict[str, Any]] = None,
         mars_cfg: Optional[Dict[str, Any]] = None,
+        pps_cfg: Optional[Dict[str, Any]] = None,
         per_sample_rollout: int = 4,
         bag_g: int = 4,   # Best-of-G reward
         max_padding_len: int = 2800,   # max token length after padding (for diffusion input) 
@@ -250,6 +251,7 @@ class NegDriveAgent(AbstractAgent):
         #     )
         self.grpo_cfg = dict(grpo_cfg) if grpo_cfg is not None else {}
         self.mars_cfg = dict(mars_cfg) if mars_cfg is not None else {}
+        self.pps_cfg = dict(pps_cfg) if pps_cfg is not None else {}
 
         self.per_sample_rollout = per_sample_rollout
         self.bag_g = bag_g

@@ -35,6 +35,13 @@ from navsim.agents.negdrive.utils.mars import (
     decompose_variance,
     flip_statistics,
 )
+from navsim.agents.negdrive.utils.pps import (
+    PPSConfig,
+    find_stop_index,
+    segment_response,
+    build_token_advantages,
+    blame_statistics,
+)
 
 from omegaconf import DictConfig, OmegaConf
 
@@ -506,6 +513,11 @@ class AgentLightningVLMRL(pl.LightningModule):
             mars_cfg = OmegaConf.to_container(mars_cfg, resolve=True)
         self.mars_cfg = MarsConfig.from_dict(mars_cfg)
 
+        pps_cfg = getattr(agent, "pps_cfg", None) or {}
+        if isinstance(pps_cfg, DictConfig):
+            pps_cfg = OmegaConf.to_container(pps_cfg, resolve=True)
+        self.pps_cfg = PPSConfig.from_dict(pps_cfg)
+
         self.cfg = cfg
         self.val_metric_cache_loader = None
         if cfg is not None:
@@ -661,10 +673,12 @@ class AgentLightningVLMRL(pl.LightningModule):
             return self._training_step_grpo_psr_only(batch, logging_prefix)
         elif self.rl_algorithm == "mars":
             return self._training_step_mars(batch, logging_prefix)
+        elif self.rl_algorithm == "pps":
+            return self._training_step_pps(batch, logging_prefix)
         else:
             raise ValueError(
                 f"Unknown rl_algorithm: {self.rl_algorithm!r}. "
-                "Expected 'nsr', 'grpo', 'hybrid', 'psr' or 'mars'."
+                "Expected 'nsr', 'grpo', 'hybrid', 'psr', 'mars' or 'pps'."
             )
 
     def _collect_rollouts(
@@ -792,8 +806,12 @@ class AgentLightningVLMRL(pl.LightningModule):
         b: int,
         g: int,
         bundle: RolloutBundle,
+        token_weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Forward a single (b, g) sample and return mean token log-prob of the response."""
+        """
+        Forward a single (b, g) sample and return mean token log-prob of the response.
+        With token_weights [ResponseLen], returns the mean of weight_t * log_prob_t instead.
+        """
         gen_output_g = bundle.all_gen_output[g]
         gen_output_single = NegDriveGenOutput(
             full_ids=gen_output_g.full_ids[b:b + 1],
@@ -814,6 +832,11 @@ class AgentLightningVLMRL(pl.LightningModule):
             )
 
         num_tokens_b = eos_mask_b.sum().clamp(min=1)
+        if token_weights is not None:
+            weights = torch.zeros_like(token_lp_b)
+            n = min(weights.shape[-1], token_weights.shape[-1])
+            weights[..., :n] = token_weights[:n].to(weights.device, weights.dtype)
+            return (weights * token_lp_b * eos_mask_b).sum() / num_tokens_b
         return (token_lp_b * eos_mask_b).sum() / num_tokens_b
 
     def _run_distributed_manual_updates(
@@ -828,7 +851,8 @@ class AgentLightningVLMRL(pl.LightningModule):
         Run per-sample manual backward passes with DDP synchronization.
 
         Each item in update_samples is either None (dummy backward) or
-        (b, g, advantage_scalar).
+        (b, g, advantage), where advantage is a float (sequence-level) or a
+        [ResponseLen] tensor (token-level, used by PPS).
         Returns True if the optimizer step should be skipped.
         """
         num_updates_local = sum(1 for sample in update_samples if sample is not None)
@@ -864,8 +888,15 @@ class AgentLightningVLMRL(pl.LightningModule):
                 continue
 
             b, g, advantage = sample
-            mean_log_prob_b = self._compute_mean_response_log_prob(b, g, bundle)
-            loss_b = -(advantage * mean_log_prob_b) / global_denominator
+            if torch.is_tensor(advantage):
+                weighted_log_prob_b = self._compute_mean_response_log_prob(
+                    b, g, bundle, token_weights=advantage
+                )
+                loss_b = -weighted_log_prob_b / global_denominator
+                mean_log_prob_b = weighted_log_prob_b
+            else:
+                mean_log_prob_b = self._compute_mean_response_log_prob(b, g, bundle)
+                loss_b = -(advantage * mean_log_prob_b) / global_denominator
             self.manual_backward(loss_b)
             total_pg_loss += loss_b.item()
             del mean_log_prob_b, loss_b
@@ -1046,6 +1077,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         tokens_list: List[str],
         metric_cache_loader: Optional[MetricCacheLoader] = None,
         do_sample: bool = True,
+        on_rollout=None,
     ) -> Tuple[RolloutBundle, Dict[str, Tensor]]:
         """
         Run G CoT rollouts per scene and decode each CoT with K planner noises.
@@ -1057,6 +1089,10 @@ class AgentLightningVLMRL(pl.LightningModule):
         Returns the rollout bundle (for the policy update) and per-sample PDM
         metrics of shape [B, G, K] on CPU. Does not call self.log, so it can be
         reused outside a Trainer (see run_mars_diagnostic.py).
+
+        on_rollout(g, last_hidden_states, gen_output, noise, diff_input, metric_cache, metrics)
+        is called after rollout g is scored (metrics[:, g] filled), while its hidden
+        states are still alive; PPS uses it to probe CoT prefixes.
         """
         cfg = self.mars_cfg
         head = self.agent.action_head
@@ -1136,6 +1172,9 @@ class AgentLightningVLMRL(pl.LightningModule):
                         metrics[key][:, g, k] = details[key].float().cpu()
                     del actions, details
 
+                if on_rollout is not None:
+                    on_rollout(g, last_hidden_states, gen_output, noise, diff_input, metric_cache, metrics)
+
                 del last_hidden_states
 
         del metric_cache, shared_noise
@@ -1214,6 +1253,214 @@ class AgentLightningVLMRL(pl.LightningModule):
             logging_prefix=logging_prefix,
             loss_log_key=f"{logging_prefix}/mars_pg_loss",
             empty_skip_message="没有 MARS 更新样本",
+        )
+        self._cleanup_rollout_bundle(bundle)
+        return skipped
+
+
+    # ==============================
+    # PPS: planner-potential shaping (step-level negative credit)
+    # ==============================
+    def _response_stop_ids(self) -> List[int]:
+        tokenizer = self.agent.vlm.tokenizer
+        ids = {tokenizer.eos_token_id, tokenizer.pad_token_id}
+        im_end = tokenizer.convert_tokens_to_ids("<|im_end|>")
+        if im_end is not None and im_end != tokenizer.unk_token_id:
+            ids.add(im_end)
+        return [i for i in ids if i is not None]
+
+    def _probe_prefix_potentials(
+        self,
+        b: int,
+        last_hidden_states: torch.Tensor,
+        gen_output: NegDriveGenOutput,
+        noise: Dict[str, Tensor],
+        diff_input: BatchFeature,
+        tokens_list: List[str],
+        metric_cache: Dict[str, Any],
+        phi_full: float,
+    ) -> Dict[str, Any]:
+        """
+        Potentials Phi at the CoT prefix boundaries of scene b's rollout.
+
+        Each prefix is decoded by the frozen planner from the causal hidden states
+        truncated to prompt_len + boundary, under the same K planner noises as the
+        full rollout, then scored with PDM. The planner's cross-attention has no
+        key mask, so prefixes are truncated (not masked) to keep later tokens out.
+        Phi at the last boundary is the full rollout's value (phi_full).
+        """
+        mars, pps = self.mars_cfg, self.pps_cfg
+        head = self.agent.action_head
+        tokenizer = self.agent.vlm.tokenizer
+        K = mars.num_planner_samples
+        prompt_len = gen_output.response_start_idx
+
+        response_ids = gen_output.full_ids[b, prompt_len:].tolist()
+        num_total = len(response_ids)
+        num_real = find_stop_index(response_ids, self._response_stop_ids())
+        pieces = [tokenizer.decode([tok]) for tok in response_ids]
+        boundaries = segment_response(
+            pieces, num_real, num_total, pps.max_segments,
+            use_markers=pps.use_stage_markers,
+        )
+
+        diff_input_b = BatchFeature({k: v[b:b + 1].repeat(K, 1) for k, v in diff_input.items()})
+        phis = []
+        for boundary in boundaries[:-1]:
+            end = prompt_len + boundary
+            hidden = last_hidden_states[b:b + 1, :end].repeat(K, 1, 1)
+            mask = gen_output.attention_mask[b:b + 1, :end].repeat(K, 1)
+            actions = head.get_action(
+                hidden,
+                diff_input_b,
+                init_actions=noise["init"][b].clone(),
+                attention_mask=mask,
+                step_noises=noise["steps"][b],
+            )
+            _, details = head.reward_pdm(
+                pred_traj=actions["pred_traj"],
+                tokens_list=[tokens_list[b]] * K,
+                cache_dict=metric_cache,
+                return_details=True,
+            )
+            fail = compute_failure(details["no_at_fault_collisions"], details["drivable_area_compliance"])
+            cost = compute_mars_cost(
+                fail.float().cpu(), details["ego_progress"].float().cpu(),
+                mars.progress_coef, mars.progress_min,
+            )
+            phis.append(-cost.mean().item())
+            del actions, details, hidden, mask
+        phis.append(phi_full)
+
+        return {
+            "boundaries": boundaries,
+            "phi": torch.tensor(phis, dtype=torch.float32),
+            "num_real": num_real,
+            "num_total": num_total,
+            "segments": ["".join(pieces[lo:hi]) for lo, hi in zip(boundaries[:-1], boundaries[1:])],
+        }
+
+    def _make_pps_probe_hook(
+        self,
+        tokens_list: List[str],
+        probes: Dict[Tuple[int, int], Dict[str, Any]],
+        probe: str,
+    ):
+        """
+        on_rollout hook for _collect_rollouts_mars that fills probes[(b, g)].
+        Prefixes are decoded under the noise the full rollout used, so this is
+        exact with or without common random numbers.
+        """
+        mars = self.mars_cfg
+
+        def hook(g, last_hidden_states, gen_output, noise, diff_input, metric_cache, metrics):
+            fail_g = compute_failure(
+                metrics["no_at_fault_collisions"][:, g], metrics["drivable_area_compliance"][:, g]
+            )
+            cost_g = compute_mars_cost(fail_g, metrics["ego_progress"][:, g], mars.progress_coef, mars.progress_min)
+            for b in range(cost_g.shape[0]):
+                if probe == "failures" and cost_g[b].mean().item() <= 0.0:
+                    continue
+                probes[(b, g)] = self._probe_prefix_potentials(
+                    b, last_hidden_states, gen_output, noise, diff_input,
+                    tokens_list, metric_cache, phi_full=-cost_g[b].mean().item(),
+                )
+
+        return hook
+
+    def collect_rollouts_with_probes(
+        self,
+        features: Dict[str, Tensor],
+        tokens_list: List[str],
+        probe: str,
+        metric_cache_loader: Optional[MetricCacheLoader] = None,
+        do_sample: bool = True,
+    ) -> Tuple[RolloutBundle, Dict[str, Tensor], Dict[Tuple[int, int], Dict[str, Any]]]:
+        """MARS rollouts plus prefix potentials for the rollouts selected by `probe`."""
+        probes: Dict[Tuple[int, int], Dict[str, Any]] = {}
+        bundle, metrics = self._collect_rollouts_mars(
+            features, tokens_list,
+            metric_cache_loader=metric_cache_loader,
+            do_sample=do_sample,
+            on_rollout=self._make_pps_probe_hook(tokens_list, probes, probe),
+        )
+        return bundle, metrics, probes
+
+    def _training_step_pps(
+        self,
+        batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]],
+        logging_prefix: str,
+    ) -> bool:
+        """
+        PPS: MARS outcome advantage plus step-level shaping from the frozen planner.
+        For a probed rollout, token t in CoT segment j gets
+            A_t = A_mars(c) + lambda * min(Phi(c_<b_{j+1}) - Phi(c_<b_j), 0)
+        so segments that turned a safer plan into a riskier one receive extra blame.
+        Unprobed rollouts keep the sequence-level MARS advantage.
+        """
+        mars, pps = self.mars_cfg, self.pps_cfg
+        features, _targets, tokens_list = batch
+        tokens_list = list(tokens_list)
+        bundle, metrics, probes = self.collect_rollouts_with_probes(features, tokens_list, probe=pps.probe)
+
+        fail = compute_failure(metrics["no_at_fault_collisions"], metrics["drivable_area_compliance"])
+        cost = compute_mars_cost(fail, metrics["ego_progress"], mars.progress_coef, mars.progress_min)
+        advantages = compute_mars_advantages(cost, mars.baseline)  # [B, G]
+
+        update_samples: List[Optional[Tuple[int, int, Any]]] = []
+        batch_size = advantages.shape[0]
+        num_token_level = 0
+        for g in range(self.G):
+            for b in range(batch_size):
+                adv = advantages[b, g].item()
+                probe = probes.get((b, g))
+                if probe is None:
+                    if abs(adv) > mars.advantage_eps:
+                        update_samples.append((b, g, adv))
+                    continue
+                token_adv = build_token_advantages(
+                    probe["boundaries"], probe["phi"], probe["num_real"], probe["num_total"],
+                    outcome_advantage=adv,
+                    shaping_coef=pps.shaping_coef,
+                    negative_only=pps.negative_only,
+                )
+                if token_adv.abs().max().item() > pps.advantage_eps:
+                    update_samples.append((b, g, token_adv))
+                    num_token_level += 1
+
+        self._log_safety_rollout_metrics(bundle.nc_tensor, bundle.dac_tensor, logging_prefix)
+        # fixed key set on every rank (sync_dist all-reduces per key)
+        log_values = {
+            "mars_cost": cost.mean().item(),
+            "mars_ego_progress": metrics["ego_progress"].mean().item(),
+            "mars_pdm_score": metrics["score"].mean().item(),
+            "pps_num_probed": float(len(probes)),
+            "pps_num_token_level": float(num_token_level),
+            "pps_num_updates": float(len(update_samples)),
+        }
+        stats = blame_statistics([p["phi"] for p in probes.values()])
+        for key in ("phi_prompt", "phi_full", "reasoning_gain", "harmful_cot_rate", "neg_segment_rate"):
+            log_values[f"pps_{key}"] = stats.get(key, 0.0)
+        for j in range(pps.max_segments):
+            log_values[f"pps_blame_seg{j}"] = stats.get(f"blame_seg{j}", 0.0)
+        print(f"PPS 更新样本数目：{len(update_samples)} (token-level {num_token_level}, probed {len(probes)})")
+
+        for name, value in log_values.items():
+            self.log(
+                f"{logging_prefix}/{name}",
+                value,
+                on_step=True,
+                on_epoch=True,
+                prog_bar=name in ("mars_cost", "pps_num_updates", "pps_reasoning_gain"),
+                sync_dist=True,
+            )
+
+        skipped = self._run_distributed_manual_updates(
+            update_samples=update_samples,
+            bundle=bundle,
+            logging_prefix=logging_prefix,
+            loss_log_key=f"{logging_prefix}/pps_pg_loss",
+            empty_skip_message="没有 PPS 更新样本",
         )
         self._cleanup_rollout_bundle(bundle)
         return skipped

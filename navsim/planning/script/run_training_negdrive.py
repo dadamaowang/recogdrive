@@ -195,6 +195,10 @@ def build_experiment_config(cfg: DictConfig) -> Dict[str, Any]:
                 OmegaConf.create(OmegaConf.select(cfg, "agent.mars_cfg", default=None) or {}),
                 resolve=True,
             ),
+            "pps_cfg": OmegaConf.to_container(
+                OmegaConf.create(OmegaConf.select(cfg, "agent.pps_cfg", default=None) or {}),
+                resolve=True,
+            ),
         },
         "log_split_stats": {
             "num_train_logs": len(getattr(cfg, "train_logs", []) or []),

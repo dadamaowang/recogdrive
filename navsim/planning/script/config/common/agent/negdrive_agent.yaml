@@ -40,6 +40,7 @@ pass_cot_token_only: False
 
 # VLM RL algorithm: nsr (negative sample reinforcement) | grpo (group relative policy optimization)
 #                   | hybrid | psr | mars (noise-marginalized negative reinforcement)
+#                   | pps (planner-potential shaping; uses mars_cfg for K / CRN / cost)
 rl_algorithm: nsr
 
 grpo_cfg:
@@ -55,4 +56,13 @@ mars_cfg:
   progress_coef: 0.5            # beta; 0 disables the progress hinge (pure safety cost)
   progress_min: 0.6             # safe samples with EP below this are penalized
   baseline: none                # none (pure negative) | group_mean
+  advantage_eps: 1.0e-6
+
+# Only used when rl_algorithm=pps (see navsim/agents/negdrive/utils/pps.py)
+pps_cfg:
+  max_segments: 4               # CoT segments probed per rollout (prefix potentials at P boundaries)
+  shaping_coef: 1.0             # lambda on segment potential differences
+  negative_only: true           # only blame segments that increased risk
+  probe: failures               # failures (rollouts with cost > 0) | all
+  use_stage_markers: true       # split at the prompt's stage headings when present
   advantage_eps: 1.0e-6
