@@ -65,6 +65,9 @@ for ARM in $ARMS; do
         agent.pps_cfg.shaping_coef=${LAMBDA} \
         agent.pps_cfg.negative_only=true \
         agent.pps_cfg.probe=failures \
+        agent.pass_cot_token_only=${COT_ONLY:-true} \
+        agent.pps_cfg.estimator=${PPS_ESTIMATOR:-truncate} \
+        agent.pps_cfg.mc_continuations=${PPS_MC_M:-2} \
         run_baseline_validation=$([ "$ARM" = "nsr" ] && echo true || echo false) \
         cache_path=null \
         force_cache_computation=false \

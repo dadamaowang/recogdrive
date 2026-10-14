@@ -5,6 +5,8 @@
 #   negative_only off      (signed shaping: also reward risk-reducing segments)
 #   probe all rollouts     (vs only failures)
 #   segmentation           markers vs evenly spaced sentence ends; P in {2, 4, 6}
+#   estimator              truncate vs mc (VLM continuations, M=2)
+#   conditioning           CoT-only (default) vs full sequence
 set -e
 cd "$(dirname "$0")"
 
@@ -17,6 +19,8 @@ done
 run PPS_NEG_ONLY=false EXP_NAME=pps_abl_signed
 run PPS_PROBE=all EXP_NAME=pps_abl_probe_all
 run PPS_MARKERS=false EXP_NAME=pps_abl_nomarkers
+run PPS_ESTIMATOR=mc PPS_MC_M=2 EXP_NAME=pps_abl_mc_m2
+run COT_ONLY=false EXP_NAME=pps_abl_fullseq
 for P in 2 6; do
     run PPS_SEGMENTS=$P EXP_NAME=pps_abl_P${P}
 done

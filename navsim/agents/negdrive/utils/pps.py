@@ -18,6 +18,14 @@ rollout is rewarded with. Splitting the CoT into segments at boundaries
 i.e. a one-step TD advantage with the frozen planner as a free critic. With
 negative_only, only segments that increased the risk receive (negative) credit.
 
+Two estimators of Phi at a prefix c_{<b}:
+  truncate  decode the planner from the prefix's hidden states (cheap; the planner
+            reads a partial CoT, which it never saw in training).
+  mc        let the VLM finish the CoT M times from the prefix and score the
+            completed CoTs (VinePPO / SPO-chain style Monte Carlo value; unbiased
+            for the policy's value, the planner only reads complete CoTs).
+            Phi(prompt) is the mean over the scene's G rollouts.
+
 Pure functions only (no model / simulator), so they can be unit-tested on CPU.
 '''
 
@@ -43,6 +51,8 @@ class PPSConfig:
     probe: str = "failures"          # failures: probe rollouts with any planner failure | all
     use_stage_markers: bool = True   # prefer the prompt's stage headings as boundaries
     advantage_eps: float = 1e-6
+    estimator: str = "truncate"      # truncate | mc (Monte Carlo continuation)
+    mc_continuations: int = 2        # M: VLM continuations per prefix (estimator=mc)
 
     @classmethod
     def from_dict(cls, cfg: Optional[Dict]) -> "PPSConfig":
@@ -53,6 +63,10 @@ class PPSConfig:
             raise ValueError("pps_cfg.max_segments must be >= 1")
         if out.probe not in ("failures", "all"):
             raise ValueError(f"Unknown pps_cfg.probe: {out.probe!r}")
+        if out.estimator not in ("truncate", "mc"):
+            raise ValueError(f"Unknown pps_cfg.estimator: {out.estimator!r}")
+        if out.mc_continuations < 1:
+            raise ValueError("pps_cfg.mc_continuations must be >= 1")
         return out
 
 

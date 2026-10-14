@@ -499,6 +499,8 @@ class AgentLightningVLMRL(pl.LightningModule):
         self.rl_algorithm = getattr(agent, "rl_algorithm", "nsr")
         self.rollout_temperature = float(getattr(agent, "rollout_temperature", 0.7))
         self.val_do_sample = bool(getattr(agent, "val_do_sample", False))
+        # Planner conditioning: False = full sequence (image + prompt + CoT), True = CoT tokens only
+        self.cot_only = bool(getattr(agent, "pass_cot_token_only", False))
 
         grpo_cfg = getattr(agent, "grpo_cfg", None) or {}
         if isinstance(grpo_cfg, DictConfig):
@@ -626,21 +628,12 @@ class AgentLightningVLMRL(pl.LightningModule):
                     temperature=self.rollout_temperature,
                 )
 
-                fwd_output = self.agent.vlm.forward_with_ids(
-                    pixel_values_cat,
-                    gen_output.full_ids,
-                    gen_output.attention_mask,
-                )
-
-                last_hidden_states = fwd_output.hidden_states[-1].clone()
-                del fwd_output
-                if last_hidden_states.ndim == 2:
-                    last_hidden_states = last_hidden_states.unsqueeze(0)
+                last_hidden_states, planner_mask, _ = self._planner_view(pixel_values_cat, gen_output)
 
             actions = self.agent.action_head.get_action(
                 last_hidden_states.to(diff_dtype),
                 diff_input,
-                attention_mask=gen_output.attention_mask,
+                attention_mask=planner_mask,
             )
 
             score, details = self.agent.action_head.get_grpo_reward(
@@ -681,6 +674,52 @@ class AgentLightningVLMRL(pl.LightningModule):
                 "Expected 'nsr', 'grpo', 'hybrid', 'psr', 'mars' or 'pps'."
             )
 
+    # ==============================
+    # Planner conditioning (full sequence vs CoT-only)
+    # ==============================
+    def _response_view(self, gen_output: NegDriveGenOutput) -> Tuple[Tensor, Tensor]:
+        """
+        Generated response tokens as a right-padded batch: ids [B, L_r], mask [B, L_r].
+        The mask covers the CoT text only (stop token and everything after it are 0),
+        matching evaluation, where forward_cot_only() tokenizes the decoded CoT string.
+        """
+        start = gen_output.response_start_idx
+        ids = gen_output.full_ids[:, start:]
+        stop_ids = torch.tensor(self._response_stop_ids(), device=ids.device)
+        reached_stop = torch.isin(ids, stop_ids).long().cumsum(dim=1) > 0
+        mask = (~reached_stop).long()
+        mask[:, 0] = 1  # keep at least one token for an empty CoT
+        return ids, mask
+
+    def _planner_view(
+        self,
+        pixel_values_cat: Tensor,
+        gen_output: NegDriveGenOutput,
+    ) -> Tuple[Tensor, Tensor, int]:
+        """
+        VLM hidden states that the frozen planner is conditioned on, for one rollout batch.
+
+        Returns (hidden [B, L, D], mask [B, L], offset): hidden[:, :offset + t] are the
+        states of the conditioning context plus the first t response tokens. offset =
+        prompt length for the full sequence and 0 for CoT-only. Generation and the
+        policy log-probs are image-conditioned in both modes; only the planner input changes.
+        """
+        if self.cot_only:
+            ids, mask = self._response_view(gen_output)
+            fwd_output = self.agent.vlm.forward_response_only(ids, mask)
+            offset = 0
+        else:
+            fwd_output = self.agent.vlm.forward_with_ids(
+                pixel_values_cat, gen_output.full_ids, gen_output.attention_mask
+            )
+            mask = gen_output.attention_mask
+            offset = gen_output.response_start_idx
+        hidden = fwd_output.hidden_states[-1].clone()
+        del fwd_output
+        if hidden.ndim == 2:
+            hidden = hidden.unsqueeze(0)
+        return hidden, mask, offset
+
     def _collect_rollouts(
         self,
         features: Dict[str, Tensor],
@@ -710,16 +749,7 @@ class AgentLightningVLMRL(pl.LightningModule):
                     )
                     all_gen_output.append(gen_output)
 
-                    fwd_output = self.agent.vlm.forward_with_ids(
-                        pixel_values_cat,
-                        gen_output.full_ids,
-                        gen_output.attention_mask,
-                    )
-
-                last_hidden_states = fwd_output.hidden_states[-1].clone()
-                del fwd_output
-                if last_hidden_states.ndim == 2:
-                    last_hidden_states = last_hidden_states.unsqueeze(0)
+                    last_hidden_states, planner_mask, _ = self._planner_view(pixel_values_cat, gen_output)
 
                 vl_features_mean = last_hidden_states.float().mean().item()
                 vl_features_std = last_hidden_states.float().std().item()
@@ -737,9 +767,9 @@ class AgentLightningVLMRL(pl.LightningModule):
                 actions = self.agent.action_head.get_action(
                     last_hidden_states.to(diff_dtype),
                     diff_input,
-                    attention_mask=gen_output.attention_mask,
+                    attention_mask=planner_mask,
                 )
-                del last_hidden_states
+                del last_hidden_states, planner_mask
 
                 self.log(
                     f"{logging_prefix}/vl_embeds_mean",
@@ -1090,9 +1120,11 @@ class AgentLightningVLMRL(pl.LightningModule):
         metrics of shape [B, G, K] on CPU. Does not call self.log, so it can be
         reused outside a Trainer (see run_mars_diagnostic.py).
 
-        on_rollout(g, last_hidden_states, gen_output, noise, diff_input, metric_cache, metrics)
+        on_rollout(g, planner_states, gen_output, noise, diff_input, metric_cache, metrics, vision)
         is called after rollout g is scored (metrics[:, g] filled), while its hidden
-        states are still alive; PPS uses it to probe CoT prefixes.
+        states are still alive; planner_states = (hidden, mask, offset) from _planner_view,
+        vision = (pixel_values_cat, num_patches_list).
+        PPS uses it to probe CoT prefixes.
         """
         cfg = self.mars_cfg
         head = self.agent.action_head
@@ -1141,16 +1173,9 @@ class AgentLightningVLMRL(pl.LightningModule):
                     )
                     all_gen_output.append(gen_output)
 
-                    fwd_output = self.agent.vlm.forward_with_ids(
-                        pixel_values_cat,
-                        gen_output.full_ids,
-                        gen_output.attention_mask,
+                    last_hidden_states, planner_mask, planner_offset = self._planner_view(
+                        pixel_values_cat, gen_output
                     )
-
-                last_hidden_states = fwd_output.hidden_states[-1].clone()
-                del fwd_output
-                if last_hidden_states.ndim == 2:
-                    last_hidden_states = last_hidden_states.unsqueeze(0)
                 last_hidden_states = last_hidden_states.to(diff_dtype)
 
                 noise = shared_noise if shared_noise is not None else draw_noise()
@@ -1159,7 +1184,7 @@ class AgentLightningVLMRL(pl.LightningModule):
                         last_hidden_states,
                         diff_input,
                         init_actions=noise["init"][:, k].clone(),
-                        attention_mask=gen_output.attention_mask,
+                        attention_mask=planner_mask,
                         step_noises=noise["steps"][:, k],
                     )
                     _, details = head.reward_pdm(
@@ -1173,9 +1198,13 @@ class AgentLightningVLMRL(pl.LightningModule):
                     del actions, details
 
                 if on_rollout is not None:
-                    on_rollout(g, last_hidden_states, gen_output, noise, diff_input, metric_cache, metrics)
+                    planner_states = (last_hidden_states, planner_mask, planner_offset)
+                    on_rollout(
+                        g, planner_states, gen_output, noise, diff_input, metric_cache, metrics,
+                        (pixel_values_cat, num_patches_list),
+                    )
 
-                del last_hidden_states
+                del last_hidden_states, planner_mask
 
         del metric_cache, shared_noise
         torch.cuda.empty_cache()
@@ -1306,10 +1335,23 @@ class AgentLightningVLMRL(pl.LightningModule):
             mars.progress_coef, mars.progress_min,
         )
 
+    def _segment_rollout(self, b: int, gen_output: NegDriveGenOutput):
+        """Segment boundaries, token pieces, num_real, num_total for scene b's response."""
+        tokenizer = self.agent.vlm.tokenizer
+        response_ids = gen_output.full_ids[b, gen_output.response_start_idx:].tolist()
+        num_total = len(response_ids)
+        num_real = find_stop_index(response_ids, self._response_stop_ids())
+        pieces = [tokenizer.decode([tok]) for tok in response_ids]
+        boundaries = segment_response(
+            pieces, num_real, num_total, self.pps_cfg.max_segments,
+            use_markers=self.pps_cfg.use_stage_markers,
+        )
+        return boundaries, pieces, num_real, num_total
+
     def _probe_prefix_potentials(
         self,
         b: int,
-        last_hidden_states: torch.Tensor,
+        planner_states: Tuple[Tensor, Tensor, int],
         gen_output: NegDriveGenOutput,
         noise: Dict[str, Tensor],
         diff_input: BatchFeature,
@@ -1321,40 +1363,134 @@ class AgentLightningVLMRL(pl.LightningModule):
         Potentials Phi at the CoT prefix boundaries of scene b's rollout.
 
         Each prefix is decoded by the frozen planner from the causal hidden states
-        truncated to prompt_len + boundary, under the same K planner noises as the
-        full rollout, then scored with PDM. The planner's cross-attention has no
-        key mask, so prefixes are truncated (not masked) to keep later tokens out.
+        truncated to offset + boundary (offset = prompt length for full-sequence
+        conditioning, 0 for CoT-only), under the same K planner noises as the full
+        rollout, then scored with PDM. With CoT-only, the empty prefix has no states,
+        so Phi_0 is set to Phi_1 (segment 0 is an anchor with zero shaping credit).
+        Prefixes are truncated (not masked), so later tokens never reach the planner.
         The last boundary reuses the full rollout's per-noise costs (full_costs [K]).
         Returns phi [P+1] and the per-noise costs [P+1, K] behind it.
         """
-        pps = self.pps_cfg
-        tokenizer = self.agent.vlm.tokenizer
-        prompt_len = gen_output.response_start_idx
-
-        response_ids = gen_output.full_ids[b, prompt_len:].tolist()
-        num_total = len(response_ids)
-        num_real = find_stop_index(response_ids, self._response_stop_ids())
-        pieces = [tokenizer.decode([tok]) for tok in response_ids]
-        boundaries = segment_response(
-            pieces, num_real, num_total, pps.max_segments,
-            use_markers=pps.use_stage_markers,
-        )
+        hidden_all, mask_all, offset = planner_states
+        boundaries, pieces, num_real, num_total = self._segment_rollout(b, gen_output)
 
         costs = []
-        for boundary in boundaries[:-1]:
-            end = prompt_len + boundary
+        for i, boundary in enumerate(boundaries[:-1]):
+            if offset == 0 and i == 0:
+                # CoT-only: an empty prefix has no states. Segment 0 is the anchor:
+                # Phi_0 := Phi_1, so it receives zero shaping credit.
+                continue
+            end = offset + boundary
             costs.append(self.score_hidden_states(
                 b,
-                last_hidden_states[b:b + 1, :end],
-                gen_output.attention_mask[b:b + 1, :end],
+                hidden_all[b:b + 1, :end],
+                mask_all[b:b + 1, :end],
                 noise, diff_input, tokens_list[b], metric_cache,
             ))
         costs.append(full_costs.float().cpu())
+        if offset == 0:
+            costs.insert(0, costs[0])
         costs = torch.stack(costs)  # [P+1, K]
 
         return {
             "boundaries": boundaries,
             "phi": -costs.mean(dim=1),
+            "costs": costs,
+            "num_real": num_real,
+            "num_total": num_total,
+            "segments": ["".join(pieces[lo:hi]) for lo, hi in zip(boundaries[:-1], boundaries[1:])],
+        }
+
+    def _probe_prefix_values_mc(
+        self,
+        b: int,
+        gen_output: NegDriveGenOutput,
+        pixel_values_cat: Tensor,
+        num_patches_list: List[int],
+        noise: Dict[str, Tensor],
+        diff_input: BatchFeature,
+        tokens_list: List[str],
+        metric_cache: Dict[str, Any],
+        full_costs: Tensor,
+    ) -> Dict[str, Any]:
+        """
+        Monte Carlo prefix values (VinePPO / SPO-chain): for every inner boundary b_j,
+        the VLM continues the CoT M times from prompt + c_{<b_j}; each completed CoT
+        is decoded by the planner (same conditioning mode as the rollouts) under the
+        scene's K noises and scored. V_j = mean over the M x K costs, negated.
+
+        costs[0] (empty prefix) is the scene's mean value over its G rollouts, which is
+        only known once all rollouts are scored; until then it is provisionally set to
+        costs[1] (segment 0 gets zero shaping credit) and the caller overwrites it.
+        costs[-1] is this rollout's own K costs. All continuations of a rollout are
+        generated in one batch.
+        """
+        M = self.pps_cfg.mc_continuations
+        boundaries, pieces, num_real, num_total = self._segment_rollout(b, gen_output)
+        prompt_len = gen_output.response_start_idx
+        inner = boundaries[1:-1]
+        costs: List[Optional[Tensor]] = [None]
+
+        if inner:
+            prompt_ids = gen_output.full_ids[b, :prompt_len]
+            prompt_mask = gen_output.attention_mask[b, :prompt_len]
+            response = gen_output.full_ids[b, prompt_len:]
+            rows = [(bd, m) for bd in inner for m in range(M)]
+            R, width = len(rows), prompt_len + max(inner)
+
+            # prompt (already left-padded) + prefix, left-padded again to a common width
+            pad_id = self.agent.vlm.tokenizer.eos_token_id
+            ids = torch.full((R, width), pad_id, dtype=prompt_ids.dtype, device=prompt_ids.device)
+            att = torch.zeros((R, width), dtype=prompt_mask.dtype, device=prompt_mask.device)
+            for r, (bd, _) in enumerate(rows):
+                seq = torch.cat([prompt_ids, response[:bd]])
+                seq_mask = torch.cat([prompt_mask, torch.ones(bd, dtype=prompt_mask.dtype, device=prompt_mask.device)])
+                ids[r, width - seq.shape[0]:] = seq
+                att[r, width - seq.shape[0]:] = seq_mask
+
+            start = sum(num_patches_list[:b])
+            pv = pixel_values_cat[start:start + num_patches_list[b]].repeat(R, 1, 1, 1)
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                new_tokens = self.agent.vlm.generate_from_ids(
+                    pv, ids, att,
+                    max_new_tokens=max(self.max_gen_text_tokens - min(inner), 1),
+                    do_sample=True,
+                    temperature=self.rollout_temperature,
+                ).to(ids.device)
+
+                # Completed rollouts in generate_text_actions() layout: the prompt part is
+                # `width - bd` long for row r, so give every row its own response start by
+                # rebuilding [left-pad | prompt | prefix + new tokens] at a shared start.
+                completed_resp = [torch.cat([response[:bd], new_tokens[r]]) for r, (bd, _) in enumerate(rows)]
+                resp_len = max(x.shape[0] for x in completed_resp)
+                resp = torch.full((R, resp_len), pad_id, dtype=ids.dtype, device=ids.device)
+                for r, x in enumerate(completed_resp):
+                    resp[r, :x.shape[0]] = x
+                completed = NegDriveGenOutput(
+                    full_ids=torch.cat([prompt_ids.expand(R, -1), resp], dim=1),
+                    attention_mask=torch.cat([prompt_mask.expand(R, -1), torch.ones_like(resp, dtype=prompt_mask.dtype)], dim=1),
+                    response_start_idx=prompt_len,
+                    text_actions=None,
+                )
+                hidden, mask, _ = self._planner_view(pv, completed)
+            hidden = hidden.to(next(self.agent.action_head.parameters()).dtype)
+
+            row_costs = [
+                self.score_hidden_states(
+                    b, hidden[r:r + 1], mask[r:r + 1], noise, diff_input,
+                    tokens_list[b], metric_cache,
+                )
+                for r in range(R)
+            ]
+            for j in range(len(inner)):
+                costs.append(torch.cat(row_costs[j * M:(j + 1) * M]))  # [M * K]
+            del hidden, mask, new_tokens, completed
+        costs.append(full_costs.float().cpu())
+        costs[0] = costs[1]
+
+        return {
+            "boundaries": boundaries,
+            "phi": torch.tensor([-c.float().mean().item() for c in costs], dtype=torch.float32),
             "costs": costs,
             "num_real": num_real,
             "num_total": num_total,
@@ -1374,7 +1510,7 @@ class AgentLightningVLMRL(pl.LightningModule):
         """
         mars = self.mars_cfg
 
-        def hook(g, last_hidden_states, gen_output, noise, diff_input, metric_cache, metrics):
+        def hook(g, planner_states, gen_output, noise, diff_input, metric_cache, metrics, vision):
             fail_g = compute_failure(
                 metrics["no_at_fault_collisions"][:, g], metrics["drivable_area_compliance"][:, g]
             )
@@ -1382,13 +1518,19 @@ class AgentLightningVLMRL(pl.LightningModule):
             for b in range(cost_g.shape[0]):
                 if probe == "failures" and cost_g[b].mean().item() <= 0.0:
                     continue
-                probes[(b, g)] = self._probe_prefix_potentials(
-                    b, last_hidden_states, gen_output, noise, diff_input,
-                    tokens_list, metric_cache, full_costs=cost_g[b],
-                )
+                if self.pps_cfg.estimator == "mc":
+                    probes[(b, g)] = self._probe_prefix_values_mc(
+                        b, gen_output, vision[0], vision[1], noise, diff_input,
+                        tokens_list, metric_cache, full_costs=cost_g[b],
+                    )
+                else:
+                    probes[(b, g)] = self._probe_prefix_potentials(
+                        b, planner_states, gen_output, noise, diff_input,
+                        tokens_list, metric_cache, full_costs=cost_g[b],
+                    )
                 if self._probe_extra_hook is not None:
                     self._probe_extra_hook(
-                        b, g, probes[(b, g)], last_hidden_states, gen_output,
+                        b, g, probes[(b, g)], planner_states, gen_output,
                         noise, diff_input, metric_cache,
                     )
 
@@ -1405,7 +1547,7 @@ class AgentLightningVLMRL(pl.LightningModule):
     ) -> Tuple[RolloutBundle, Dict[str, Tensor], Dict[Tuple[int, int], Dict[str, Any]]]:
         """
         MARS rollouts plus prefix potentials for the rollouts selected by `probe`.
-        extra_hook(b, g, probe, last_hidden_states, gen_output, noise, diff_input,
+        extra_hook(b, g, probe, planner_states, gen_output, noise, diff_input,
         metric_cache) runs after each probe (used by the pilot's counterfactual test).
         """
         self._probe_extra_hook = extra_hook
@@ -1416,6 +1558,14 @@ class AgentLightningVLMRL(pl.LightningModule):
             do_sample=do_sample,
             on_rollout=self._make_pps_probe_hook(tokens_list, probes, probe),
         )
+        if self.pps_cfg.estimator == "mc":
+            # value of the empty prefix = the scene's mean cost over all G x K samples
+            mars = self.mars_cfg
+            fail = compute_failure(metrics["no_at_fault_collisions"], metrics["drivable_area_compliance"])
+            scene_cost = compute_mars_cost(fail, metrics["ego_progress"], mars.progress_coef, mars.progress_min)
+            for (b, _g), p in probes.items():
+                p["costs"][0] = scene_cost[b].flatten()
+                p["phi"] = torch.tensor([-c.float().mean().item() for c in p["costs"]], dtype=torch.float32)
         return bundle, metrics, probes
 
     def _training_step_pps(

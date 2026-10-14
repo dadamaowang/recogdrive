@@ -123,6 +123,7 @@ class LightningDiTBlock(nn.Module):
         conditioning: torch.Tensor,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         rotary_embedder: Optional[nn.Module] = None,
+        encoder_attention_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         mod_params = self.adaLN_modulation(conditioning)
         shift_attn, scale_attn, gate_attn, shift_ffn, scale_ffn, gate_ffn = \
@@ -134,6 +135,7 @@ class LightningDiTBlock(nn.Module):
         attn_output = self.attn(
             modulated_states,
             encoder_hidden_states=encoder_hidden_states,
+            attention_mask=encoder_attention_mask if encoder_hidden_states is not None else None,
             rotary_embedder=rotary_embedder
         )
         hidden_states = hidden_states + gate_attn.unsqueeze(1) * attn_output
@@ -216,6 +218,7 @@ class LightningDiT(nn.Module):
         conditioning_features: torch.Tensor,
         timesteps: torch.LongTensor,
         return_hidden_states: bool = False,
+        encoder_key_padding_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor | tuple[torch.Tensor, List[torch.Tensor]]:
         """
         Forward pass of the UnifiedDiT model.
@@ -227,6 +230,9 @@ class LightningDiT(nn.Module):
             timesteps (torch.LongTensor): Diffusion timesteps.
             return_hidden_states (bool): If True, returns the output and a list of
                 all intermediate hidden states.
+            encoder_key_padding_mask (Optional[torch.Tensor]): [B, S] with 1 for valid
+                context tokens and 0 for padding; padded keys are excluded from
+                cross-attention. None keeps the original (unmasked) behaviour.
 
         Returns:
             The final output tensor, or a tuple of the output and all hidden states.
@@ -241,6 +247,11 @@ class LightningDiT(nn.Module):
         time_embedding = self.timestep_encoder(timesteps)
         conditioning = time_embedding + conditioning_features
 
+        encoder_attention_mask = None
+        if encoder_key_padding_mask is not None:
+            # boolean SDPA mask [B, 1, 1, S]: True = attend
+            encoder_attention_mask = encoder_key_padding_mask.bool()[:, None, None, :]
+
         all_hidden_states = [hidden_states]
         for idx, block in enumerate(self.transformer_blocks):
             use_cross_attention = not (idx % 2 == 0 and self.interleave_attention)
@@ -251,6 +262,7 @@ class LightningDiT(nn.Module):
                 conditioning=conditioning,
                 encoder_hidden_states=current_encoder_states,
                 rotary_embedder=self.rotary_embedder,
+                encoder_attention_mask=encoder_attention_mask,
             )
             all_hidden_states.append(hidden_states)
 

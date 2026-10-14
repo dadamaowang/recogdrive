@@ -49,6 +49,7 @@ torchrun \
     experiment_name=$EXP_NAME \
     agent=negdrive_agent \
     agent.mode=eval \
+    agent.pass_cot_token_only=${COT_ONLY:-true} \
     agent.rl_algorithm=mars \
     agent.mars_cfg.num_planner_samples=${MARS_K} \
     agent.mars_cfg.common_random_numbers=${MARS_CRN} \

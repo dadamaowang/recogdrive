@@ -36,6 +36,9 @@ max_padding_len: 2800
 rollout_temperature: 0.7
 val_do_sample: false
 
+# Planner conditioning for training rollouts, validation and probes:
+# False = full sequence (image + prompt + CoT); True = CoT tokens only (text-only forward).
+# Generation and policy log-probs stay image-conditioned either way.
 pass_cot_token_only: False
 
 # VLM RL algorithm: nsr (negative sample reinforcement) | grpo (group relative policy optimization)
@@ -66,3 +69,5 @@ pps_cfg:
   probe: failures               # failures (rollouts with cost > 0) | all
   use_stage_markers: true       # split at the prompt's stage headings when present
   advantage_eps: 1.0e-6
+  estimator: truncate           # truncate (planner reads the CoT prefix) | mc (VLM finishes the CoT M times)
+  mc_continuations: 2           # M, only for estimator=mc

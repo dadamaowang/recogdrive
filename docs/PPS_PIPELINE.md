@@ -343,7 +343,28 @@ pps_cfg:
   probe: failures               # failures | all
   use_stage_markers: true       # split at the prompt's stage headings
   advantage_eps: 1.0e-6
+  estimator: truncate           # truncate | mc
+  mc_continuations: 2           # M (estimator=mc)
+
+pass_cot_token_only: true       # planner reads CoT tokens only (recommended)
 ```
+
+**Planner conditioning (`pass_cot_token_only`).**
+- `false`: the planner reads image + prompt + CoT, as in the sections above.
+- `true`: the planner reads only the generated CoT tokens. This is a text-only forward (`forward_response_only`), right-padded, with padding excluded from the DiT's cross-attention.
+- Generation and the policy log-probs stay image-conditioned in both modes.
+- With `true`, the empty prefix has no hidden states, so in the truncate estimator Φ₀ := Φ₁: segment 0 becomes an anchor with zero shaping credit.
+- On navtest, CoT-only scored +13.7 PDMS (2B) and +11.4 PDMS (8B) over the full sequence (`prompt_v1_pre/`).
+
+**Estimator (`pps_cfg.estimator`).**
+- `truncate` (Section 5, step 2.5): the planner decodes the hidden states of the CoT prefix. Cheap, but the planner sees partial CoTs it was never trained on.
+- `mc` (VinePPO / SPO-chain style):
+  - For each inner boundary b_j, the VLM *finishes* the CoT M times from prompt + c<b_j (`generate_from_ids`, one batch per rollout).
+  - Each completed CoT is decoded under the scene's K noises.
+  - V_j = −mean over the M × K costs.
+  - Φ₀ is the scene's mean value over all G × K rollout samples; Φ_P is the rollout's own value.
+  - The planner only ever reads complete CoTs, and V is an unbiased value of the current policy.
+  - Cost: (P−1)·M extra generations and (P−1)·M·K PDM simulations per probed rollout.
 
 ---
 

@@ -47,10 +47,10 @@ CONFIG_PATH = "config/training"
 CONFIG_NAME = "default_training"
 
 
-def drop_segment(hidden: torch.Tensor, mask: torch.Tensor, prompt_len: int, lo: int, hi: int):
-    """Remove response tokens [lo, hi) from hidden [1, L, D] / mask [1, L]."""
+def drop_segment(hidden: torch.Tensor, mask: torch.Tensor, offset: int, lo: int, hi: int):
+    """Remove response tokens [lo, hi) from hidden [1, L, D] / mask [1, L] (offset = context length)."""
     keep = torch.ones(hidden.shape[1], dtype=torch.bool, device=hidden.device)
-    keep[prompt_len + lo: prompt_len + hi] = False
+    keep[offset + lo: offset + hi] = False
     return hidden[:, keep], mask[:, keep]
 
 
@@ -88,11 +88,11 @@ def main(cfg: DictConfig) -> None:
 
     controls: Dict[Any, Dict[str, Any]] = {}
 
-    def extra_hook(b, g, probe, last_hidden_states, gen_output, noise, diff_input, metric_cache):
+    def extra_hook(b, g, probe, planner_states, gen_output, noise, diff_input, metric_cache):
         token = current_tokens[b]
-        prompt_len = gen_output.response_start_idx
-        full_h = last_hidden_states[b:b + 1]
-        full_m = gen_output.attention_mask[b:b + 1]
+        hidden_all, mask_all, offset = planner_states
+        full_h = hidden_all[b:b + 1]
+        full_m = mask_all[b:b + 1]
         out: Dict[str, Any] = {}
 
         # (1) reliability: same CoT, fresh independent noises
@@ -114,7 +114,7 @@ def main(cfg: DictConfig) -> None:
             j_rand = rng.choice(others)
             for name, j in (("blame", j_blame), ("random", j_rand)):
                 lo, hi = bounds[j], min(bounds[j + 1], probe["num_real"])
-                h, m = drop_segment(full_h, full_m, prompt_len, lo, hi)
+                h, m = drop_segment(full_h, full_m, offset, lo, hi)
                 out[f"cost_drop_{name}"] = module.score_hidden_states(
                     b, h, m, noise, diff_input, token, metric_cache
                 )
@@ -139,7 +139,7 @@ def main(cfg: DictConfig) -> None:
                 "token": token,
                 "g": g,
                 "phi": probe["phi"],
-                "costs": probe["costs"],          # [P+1, K]
+                "costs": probe["costs"],          # list of P+1 per-sample cost tensors
                 "boundaries": probe["boundaries"],
                 "num_real": probe["num_real"],
                 "segments": probe["segments"],

@@ -523,6 +523,60 @@ class NegDriveBackbone(nn.Module):
 
 
 
+    def forward_response_only(self,
+                              input_ids: torch.Tensor,       # [B, L] right-padded response tokens
+                              attention_mask: torch.Tensor   # [B, L] 1 = CoT token, 0 = padding
+                              ) -> NegDriveBackboneOutput:
+        """
+        Batched text-only forward over generated response token ids (no image, no prompt).
+        Training-time counterpart of forward_cot_only(): the planner is conditioned on the
+        CoT alone, while the policy's generation and log-probs stay image-conditioned.
+        """
+        input_ids = input_ids.to(self.device)
+        attention_mask = attention_mask.to(self.device)
+        position_ids = attention_mask.long().cumsum(-1) - 1
+        position_ids.masked_fill_(attention_mask == 0, 1)
+
+        model_outputs = self.model.language_model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                output_hidden_states=True,
+                return_dict=True,
+        )
+        return NegDriveBackboneOutput(
+            logits=model_outputs.logits,
+            hidden_states=model_outputs.hidden_states,
+            input_ids=input_ids,
+            attention_mask=attention_mask
+        )
+
+
+    def generate_from_ids(self,
+                          pixel_values: torch.Tensor,     # [R * NumPatches, C, H, W]
+                          input_ids: torch.Tensor,        # [R, SeqLen] left-padded prompt (+ CoT prefix)
+                          attention_mask: torch.Tensor,   # [R, SeqLen]
+                          max_new_tokens: int,
+                          do_sample: bool = True,
+                          temperature: float = 0.7,
+                          ) -> torch.Tensor:
+        """
+        Continue generation from pre-built ids (prompt + partial CoT). Used for Monte Carlo
+        continuations of CoT prefixes. Returns only the new tokens [R, NewTokens].
+        """
+        generate_kwargs = dict(
+            pixel_values=pixel_values,
+            input_ids=input_ids.to(self.device),
+            attention_mask=attention_mask.to(self.device),
+            max_new_tokens=max_new_tokens,
+            do_sample=do_sample,
+            pad_token_id=self.tokenizer.eos_token_id,
+        )
+        if do_sample:
+            generate_kwargs["temperature"] = temperature
+        return self.model.generate(**generate_kwargs)
+
+
     def forward_cot_only(self,
                          cot_text,  # [SeqLen] (batch_size=1)
                          ) -> NegDriveBackboneOutput:

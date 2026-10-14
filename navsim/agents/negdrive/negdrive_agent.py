@@ -203,6 +203,8 @@ class NegDriveAgent(AbstractAgent):
         cfg.metric_cache_path = self.metric_cache_path
 
         self.action_head =  NegDriveDiffusionPlanner(cfg).to(self.device)
+        # CoT-only batches are right-padded: keep padding out of the planner's cross-attention
+        self.action_head.mask_cross_attention = bool(pass_cot_token_only)
 
         if self.freeze_diffusion:
             diff_ckpt = torch.load(self.diff_path, map_location="cpu", weights_only=False)

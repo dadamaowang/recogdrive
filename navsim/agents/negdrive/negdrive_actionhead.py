@@ -176,6 +176,10 @@ class NegDriveDiffusionPlanner(nn.Module):
     def __init__(self, config: NegDriveDiffusionPlannerConfig):
         super().__init__()
         self.config = config
+        # Exclude padded VLM tokens from the DiT's cross-attention. Off by default to keep
+        # the planner's original behaviour (left-padded full sequences); the agent turns it
+        # on for CoT-only conditioning, where batches are right-padded.
+        self.mask_cross_attention = False
         
         self.model = LightningDiT(**config.diffusion_model_cfg)
 
@@ -423,7 +427,8 @@ class NegDriveDiffusionPlanner(nn.Module):
             hidden_states=fused_input,
             encoder_hidden_states=vl_features,
             conditioning_features=ego_status_features,
-            timesteps=t
+            timesteps=t,
+            encoder_key_padding_mask=attention_mask if self.mask_cross_attention else None,
         )
         pred_noise = self.action_decoder(model_output)
 

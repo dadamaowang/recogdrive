@@ -38,6 +38,7 @@ MARS_CRN=${MARS_CRN:-true}               # common random numbers across CoTs
 MARS_PROGRESS_COEF=${MARS_PROGRESS_COEF:-0.5}
 MARS_PROGRESS_MIN=${MARS_PROGRESS_MIN:-0.6}
 MARS_BASELINE=${MARS_BASELINE:-none}     # none | group_mean
+COT_ONLY=${COT_ONLY:-true}               # planner reads CoT tokens only
 
 EXP_NAME=${EXP_NAME:-"mars_G${G}_K${MARS_K}_crn${MARS_CRN}_beta${MARS_PROGRESS_COEF}_${MARS_BASELINE}"}
 FAST_DEV_RUN=${FAST_DEV_RUN:-false}
@@ -66,6 +67,7 @@ torchrun \
     agent.mars_cfg.progress_coef=${MARS_PROGRESS_COEF} \
     agent.mars_cfg.progress_min=${MARS_PROGRESS_MIN} \
     agent.mars_cfg.baseline=${MARS_BASELINE} \
+    agent.pass_cot_token_only=${COT_ONLY} \
     cache_path=null \
     force_cache_computation=false \
     seed=42 \

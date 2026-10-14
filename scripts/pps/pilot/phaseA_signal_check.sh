@@ -27,7 +27,7 @@ MAX_SCENES=${MAX_SCENES:-200}
 G=${G:-4}
 MARS_K=${MARS_K:-4}
 PPS_SEGMENTS=${PPS_SEGMENTS:-4}
-EXP_NAME=${EXP_NAME:-"pps_pilotA_n${MAX_SCENES}_G${G}_K${MARS_K}_P${PPS_SEGMENTS}"}
+EXP_NAME=${EXP_NAME:-"pps_pilotA_${PPS_ESTIMATOR:-truncate}_cot${COT_ONLY:-true}_n${MAX_SCENES}_G${G}_K${MARS_K}_P${PPS_SEGMENTS}"}
 
 export GPUS=${GPUS:-8}
 export MASTER_PORT=${MASTER_PORT:-63699}
@@ -43,12 +43,15 @@ torchrun --nnodes=1 --nproc_per_node=${GPUS} --master_port=${MASTER_PORT} \
     experiment_name=$EXP_NAME \
     agent=negdrive_agent \
     agent.mode=eval \
+    agent.pass_cot_token_only=${COT_ONLY:-true} \
     agent.rl_algorithm=pps \
     agent.mars_cfg.num_planner_samples=${MARS_K} \
     agent.mars_cfg.common_random_numbers=true \
     agent.mars_cfg.progress_coef=0.0 \
     agent.pps_cfg.max_segments=${PPS_SEGMENTS} \
     agent.pps_cfg.use_stage_markers=true \
+    agent.pps_cfg.estimator=${PPS_ESTIMATOR:-truncate} \
+    agent.pps_cfg.mc_continuations=${PPS_MC_M:-2} \
     +diagnostic.split=train \
     +diagnostic.max_scenes=${MAX_SCENES} \
     cache_path=null \

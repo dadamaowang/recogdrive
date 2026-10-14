@@ -80,7 +80,10 @@ class Attention(nn.Module):
         else:
             attn_scores = torch.matmul(q, k.transpose(-2, -1)) * self.scale
             if attention_mask is not None:
-                attn_scores = attn_scores + attention_mask
+                if attention_mask.dtype == torch.bool:
+                    attn_scores = attn_scores.masked_fill(~attention_mask, float("-inf"))
+                else:
+                    attn_scores = attn_scores + attention_mask
             
             attn_probs = attn_scores.softmax(dim=-1)
             attn_probs = F.dropout(attn_probs, p=self.to_out[-1].p, training=self.training)

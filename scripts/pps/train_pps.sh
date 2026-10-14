@@ -44,8 +44,11 @@ PPS_LAMBDA=${PPS_LAMBDA:-1.0}            # shaping coefficient
 PPS_NEG_ONLY=${PPS_NEG_ONLY:-true}       # only blame risk-increasing segments
 PPS_PROBE=${PPS_PROBE:-failures}         # failures | all
 PPS_MARKERS=${PPS_MARKERS:-true}         # split at stage headings
+PPS_ESTIMATOR=${PPS_ESTIMATOR:-truncate} # truncate | mc
+PPS_MC_M=${PPS_MC_M:-2}                  # continuations per prefix (mc)
+COT_ONLY=${COT_ONLY:-true}               # planner reads CoT tokens only (recommended, see prompt_v1_pre)
 
-EXP_NAME=${EXP_NAME:-"pps_G${G}_K${MARS_K}_P${PPS_SEGMENTS}_l${PPS_LAMBDA}_neg${PPS_NEG_ONLY}_${PPS_PROBE}"}
+EXP_NAME=${EXP_NAME:-"pps_${PPS_ESTIMATOR}_cot${COT_ONLY}_G${G}_K${MARS_K}_P${PPS_SEGMENTS}_l${PPS_LAMBDA}_neg${PPS_NEG_ONLY}_${PPS_PROBE}"}
 FAST_DEV_RUN=${FAST_DEV_RUN:-false}
 BATCH_SIZE=${BATCH_SIZE:-8}
 
@@ -77,6 +80,9 @@ torchrun \
     agent.pps_cfg.negative_only=${PPS_NEG_ONLY} \
     agent.pps_cfg.probe=${PPS_PROBE} \
     agent.pps_cfg.use_stage_markers=${PPS_MARKERS} \
+    agent.pps_cfg.estimator=${PPS_ESTIMATOR} \
+    agent.pps_cfg.mc_continuations=${PPS_MC_M} \
+    agent.pass_cot_token_only=${COT_ONLY} \
     cache_path=null \
     force_cache_computation=false \
     seed=42 \

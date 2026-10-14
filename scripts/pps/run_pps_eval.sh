@@ -50,6 +50,7 @@ torchrun \
     experiment_name=$EXP_NAME \
     agent=negdrive_agent \
     agent.mode=eval \
+    agent.pass_cot_token_only=${COT_ONLY:-true} \
     agent.rl_algorithm=pps \
     agent.pps_cfg.max_segments=${PPS_SEGMENTS} \
     agent.mars_cfg.num_planner_samples=${MARS_K} \
