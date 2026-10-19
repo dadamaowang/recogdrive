@@ -75,19 +75,16 @@ class DDIMConfig:
 
 
 class NegDriveDiffusionPlannerConfig(PretrainedConfig):
-    """A refined configuration for the ReCogDriveDiffusionPlanner."""
 
-    # --- Core Architecture ---
     diffusion_model_cfg: dict = field(default_factory=dict)    
     # diffusion_model_cfg: dict = None  
     """
-    when environment has flash-attention installed, the diffusion_model_cfg should be 'None';
-    then add the following code after the 'NegDriveDiffusionPlannerConfig':
+    When flash-attention is available in the environment, set diffusion_model_cfg to 'None'.
+    In that case, add the following code after the NegDriveDiffusionPlannerConfig definition:
 
     if not dataclasses.is_dataclass(NegDriveDiffusionPlannerConfig):
         NegDriveDiffusionPlannerConfig = dataclass(NegDriveDiffusionPlannerConfig)
     """
-    
 
     input_embedding_dim: int = 1536
     hidden_size: int = 1024
@@ -110,21 +107,16 @@ class NegDriveDiffusionPlannerConfig(PretrainedConfig):
     ddpm_cfg: DDPMConfig = field(default_factory=DDPMConfig)
     ddim_cfg: DDIMConfig = field(default_factory=DDIMConfig)
 
-    """NOTE
-    For reward 
-    """
+
     metric_cache_path: str = "/path/to/metric_cache_train"
     scorer_config: PDMScorerConfig = field(default_factory=lambda: PDMScorerConfig(
         progress_weight=10.0, ttc_weight=5.0, comfortable_weight=2.0
     ))
 
 
-
+# Guard against double-decoration: only apply @dataclass if not already decorated
 if not dataclasses.is_dataclass(NegDriveDiffusionPlannerConfig):
     NegDriveDiffusionPlannerConfig = dataclass(NegDriveDiffusionPlannerConfig)
-"""
-when environment has flash-attention installed, above code should be installed 
-"""
 
 
 class NegDriveDiffusionPlanner(nn.Module):
@@ -193,7 +185,6 @@ class NegDriveDiffusionPlanner(nn.Module):
         if config.grpo:
             self._init_grpo(config.grpo_cfg)
 
-        # for reward computing
         self.metric_cache_loader = MetricCacheLoader(Path(config.metric_cache_path))
         proposal_sampling = TrajectorySampling(time_horizon=4, interval_length=0.1)
         self.simulator = PDMSimulator(proposal_sampling)
