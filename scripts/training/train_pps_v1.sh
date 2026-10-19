@@ -9,6 +9,7 @@ nvidia-smi
 MASTER_PORT=63669
 PORT=63665
 GPUS=2
+GPUS_PER_NODE=2
 
 MASTER_PORT=${MASTER_PORT:-63669}
 PORT=${PORT:-63665}
@@ -65,10 +66,8 @@ BATCH_SIZE=${BATCH_SIZE:-8}
 
 export HYDRA_FULL_ERROR=1
 export SWANLAB_MODE=${SWANLAB_MODE:-online}
-# SwanLab experiment tracking (国内云端，无需代理)
-# 首次使用：在 https://swanlab.cn 获取 API Key，或执行 swanlab login
-export SWANLAB_API_KEY="x"
-# 离线模式（不上传云端，本地 swanboard 查看）：export SWANLAB_MODE=offline
+
+export SWANLAB_API_KEY="TWmPzvO5E3jGsuuAF9R1a"
 export SWANLAB_MODE=${SWANLAB_MODE:-online}
 
 
