@@ -1,14 +1,3 @@
-# -*- encoding: utf-8 -*-
-'''
-@File    :   negdrive_backbone.py
-@Time    :   2026/01/17 19:11:55
-@Author  :   Nuoqian Xiao
-@Version :   0.0.1
-@Contact :   feimaoxiaotianshi@outlook.com
-@License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   【正在优化】
-@Desc    :  
-'''
 
 
 from typing import List, Optional, Tuple, Union, Literal

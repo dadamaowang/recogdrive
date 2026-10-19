@@ -1,17 +1,3 @@
-# -*- encoding: utf-8 -*-
-'''
-@File    :   negdrive_agent.py
-@Time    :   2026/01/04 10:32:54
-@Author  :   Nuoqian Xiao
-@Version :   0.0.1
-@Contact :   feimaoxiaotianshi@outlook.com
-@License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   【正在优化】
-@Desc    :   
-'''
-
-# import pdb
-import sys 
 
 from typing import Any, List, Dict, Optional, Tuple, Union, Literal
 import os
@@ -51,9 +37,9 @@ class NegDriveAgent(AbstractAgent):
     def __init__(   
         self,
         *,
-        trajectory_sampling: TrajectorySampling,    # for building targets 
-        metric_cache_path: Optional[str] = None,    # for validation 
-        mode: str = "train",   # control certain behaviors (e.g. caching, rollout, etc.) based on mode
+        trajectory_sampling: TrajectorySampling,   
+        metric_cache_path: Optional[str] = None,   
+        mode: Literal["train", "eval"] = "train",
 
         # ========== VLM (POLICY) ==========
         vlm_path: str,
@@ -81,11 +67,10 @@ class NegDriveAgent(AbstractAgent):
         freeze_diffusion: bool = True,           
         diff_path: Optional[str] = None,
 
-        # ========== RL ==========
-        rl_algorithm: str = "nsr",   # nsr | grpo
+        # ========== RL for VLM Policy  ==========
+        rl_algorithm: Literal["nsr", "grpo", "hybrid"] = "nsr",  
         grpo_cfg: Optional[Dict[str, Any]] = None,
         per_sample_rollout: int = 4,
-        bag_g: int = 4,   # Best-of-G reward
         max_padding_len: int = 2800,   # max token length after padding (for diffusion input) 
         reward_scale: float = 1.0,
         entropy_coef: float = 0.01,
@@ -94,15 +79,8 @@ class NegDriveAgent(AbstractAgent):
         # ========== RUNTIME ==========
         device: Optional[str] = None,
     ):
-        """【正在优化】
-        
-        """
-        
         super().__init__()
 
-        # -----------------------
-        # core attributes
-        # -----------------------
         self._trajectory_sampling = trajectory_sampling     
         self.metric_cache_path = metric_cache_path
         self.device = device or f"cuda:{int(os.getenv('LOCAL_RANK', 0))}"
@@ -110,20 +88,17 @@ class NegDriveAgent(AbstractAgent):
         self.mode = mode
 
         """NOTE VLM + Diffusion Planner 
-        (1) dit_type : main differenct: input_dim, output_dim 
+        (1) dit_type 
             small : input_embedding_dim = 384
             large : input_embedding_dim = 1536
 
-            dit_type is decoupled with vlm_size
+            **dit_type is decoupled with vlm_size**
 
         (2) vlm_size: 
             small: hidden_embedding_dim = 1536 
             large: hidden_embedding_dim = 3584
         """
 
-        # -----------------------
-        # VLM (policy network)
-        # -----------------------        
         self.vlm_path = vlm_path
         self.vlm_lora_path = vlm_lora_path
         self.vlm_type = vlm_type   
@@ -135,54 +110,24 @@ class NegDriveAgent(AbstractAgent):
         self.lora_alpha = lora_alpha
         self.lora_dropout = lora_dropout
 
-        if self.mode == "train" or self.mode == "recogdrive_eval":  # TODO
+        self.vlm = NegDriveBackbone(    
+            model_type=self.vlm_type,
+            checkpoint_path=self.vlm_path,
+            vlm_lora_path=self.vlm_lora_path,
+            device=self.device,
+            max_padding_len=self.max_padding_len,
+            lora_r=self.lora_r,
+            lora_alpha=self.lora_alpha,
+            lora_dropout=self.lora_dropout,
+            mode=self.mode,
+        )
+        self.vlm = self.vlm.to(self.device)
 
-            mode = "train" if self.mode == "train" else "eval"
-
-            self.vlm = NegDriveBackbone(    
-                model_type=self.vlm_type,
-                checkpoint_path=self.vlm_path,
-                vlm_lora_path=self.vlm_lora_path,
-                device=self.device,
-                max_padding_len=self.max_padding_len,
-                lora_r=self.lora_r,
-                lora_alpha=self.lora_alpha,
-                lora_dropout=self.lora_dropout,
-                mode=mode,
-            )
-            self.vlm = self.vlm.to(self.device)
-
-
-        elif self.mode == "eval": 
-
-            self.vlm = NegDriveBackbone(    
-                model_type=self.vlm_type,
-                checkpoint_path=self.vlm_path,
-                vlm_lora_path=self.vlm_lora_path,
-                device=self.device,
-                max_padding_len=self.max_padding_len,
-                lora_r=self.lora_r,
-                lora_alpha=self.lora_alpha,
-                lora_dropout=self.lora_dropout,
-                mode=mode,
-            )
-            self.vlm = self.vlm.to(self.device)
-
-
-
-
-        # -----------------------
-        # vlm setting
-        # -----------------------
         self.max_text_tokens = max_text_tokens
         self.rollout_temperature = rollout_temperature
         self.val_do_sample = val_do_sample
-
         self.pass_cot_token_only = pass_cot_token_only
 
-        # -----------------------
-        # Diffusion planner (frozen)
-        # -----------------------
         self.diff_path = diff_path
         self.freeze_diffusion = freeze_diffusion
         self.dit_type = dit_type
@@ -206,7 +151,6 @@ class NegDriveAgent(AbstractAgent):
             diff_ckpt = torch.load(self.diff_path, map_location="cpu", weights_only=False)
             state_dict = diff_ckpt["state_dict"]
 
-            # strip "agent.action_head" prefix
             prefix = "agent.action_head."
             cleaned_state_dict = {
                 k[len(prefix):]: v
@@ -228,51 +172,32 @@ class NegDriveAgent(AbstractAgent):
             
         else:
             raise NotImplementedError
-
-
-        # -----------------------
-        # Load Model Final Check
-        # -----------------------        
+      
         # self._verify_model_dtype(self.vlm, "VLM")
         # self._verify_model_dtype(self.action_head, "Diffusion Planner")
 
-
-        # -----------------------
-        # training parameters 
-        # -----------------------
         self._lr = vlm_lr
 
         self.rl_algorithm = rl_algorithm.lower()
-        # if self.rl_algorithm not in ("nsr", "grpo", "hybrid"):
-        #     raise ValueError(
-        #         f"Unknown rl_algorithm: {rl_algorithm!r}. Expected 'nsr' or 'grpo' or 'hybrid'."
-        #     )
+        if self.rl_algorithm not in ("nsr", "grpo", "hybrid"):
+            raise ValueError(
+                f"Unknown rl_algorithm: {rl_algorithm!r}. Expected 'nsr' or 'grpo' or 'hybrid'."
+            )
         self.grpo_cfg = dict(grpo_cfg) if grpo_cfg is not None else {}
 
         self.per_sample_rollout = per_sample_rollout
-        self.bag_g = bag_g
         
-
         self.opt_type = opt_type
         self.opt_weight_decay = opt_weight_decay
         self.opt_eps = opt_eps
 
         self.total_training_steps = None   # set by lightning module at runtime
 
-
+    
         # self.reward_scale = reward_scale
         # self.entropy_coef = entropy_coef
         # self.kl_coef = kl_coef
         # self.reference_policy_checkpoint = reference_policy_checkpoint
-
-
-
-
-        # # -----------------------
-        # # others TOOD
-        # # -----------------------
-        # self.num_inference_samples = 1
-        # self.inference_selection_mode = "median"
 
         if self.mode == "eval":
             print("Agent is in eval mode.")
