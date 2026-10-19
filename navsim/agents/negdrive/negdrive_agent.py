@@ -570,7 +570,7 @@ class NegDriveAgent(AbstractAgent):
 
     def unpack_features_cot_prompt(self, features: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, List[str], List[int]]:
         """
-        
+        Put customized CoT prompts here. Otherwise, the VLM will serve as a pretrained cognitive backbone without reasoning.
         """
 
         for key, tensor in features.items():
@@ -750,11 +750,7 @@ class NegDriveAgent(AbstractAgent):
                      features: Dict[str, torch.Tensor], 
                      targets: Dict[str, torch.Tensor], 
                      predictions: Dict[str, torch.Tensor]) -> torch.Tensor:
-        """
-        For pl;  
-        
-        TODO check 
-        """
+
         if self.training and self.grpo:
             return predictions
         elif self.training:
@@ -767,8 +763,6 @@ class NegDriveAgent(AbstractAgent):
 
 
     def get_optimizers(self) -> Union[Optimizer, Dict[str, LRScheduler]]:
-        """Get Optimizer and Scheduler for Negdrive VLM LoRA Fine-tuneing 
-        """
 
         trainable_params = [p for p in self.vlm.parameters() if p.requires_grad]
         optimizer = torch.optim.AdamW(
@@ -779,16 +773,6 @@ class NegDriveAgent(AbstractAgent):
             eps=self.opt_eps,
             fused=True  # for H800
         )
-
-        # optimizer_cfg = DictConfig(dict(type="AdamW", 
-        #                                 lr=self._lr, 
-        #                                 weight_decay=self.opt_weight_decay, 
-        #                                 betas=(0.9, 0.95))
-        #                                 )
-        
-        # optimizer = build_from_configs(optim, 
-        #                                optimizer_cfg, 
-        #                                params=trainable_params)    
 
         total_steps = self.total_training_steps
         warmup_steps = int(total_steps * 0.05)
@@ -801,14 +785,6 @@ class NegDriveAgent(AbstractAgent):
             ],
             milestones=[warmup_steps]
         )
-
-        # scheduler = WarmupCosLR(optimizer=optimizer,  
-        #                             lr=self._lr, 
-        #                             min_lr=0.0, 
-        #                             epochs=10, 
-        #                             warmup_epochs=0
-        #                             )       
-                    
         return {'optimizer': optimizer, 'lr_scheduler': scheduler}
 
 
@@ -834,8 +810,6 @@ def decode_paths_from_tensor(path_tensor: torch.Tensor) -> List[str]:
             chars.append(chr(code_item))
         decoded_paths.append("".join(chars))
     return decoded_paths
-
-
 
 
 def make_diffusion_planner_config(  
