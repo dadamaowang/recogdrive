@@ -510,12 +510,11 @@ class NegDriveDiffusionPlanner(nn.Module):
 
         vl_embeds = self.feature_encoder(vl_features)
 
-        # Latent Stability Check 02
+        # Latent Stability Check 
         vl_embeds_mean_value = vl_embeds.float().mean().item()
         vl_embeds_std = vl_embeds.float().std().item()
         vl_embeds_norm = torch.linalg.vector_norm(vl_embeds.float(), dim=-1).mean().item()
 
-        
         history_embeds = self.his_traj_encoder(
             action_input.his_traj.unsqueeze(1)
         ).repeat(1, self.config.action_horizon, 1)
@@ -646,12 +645,8 @@ class NegDriveDiffusionPlanner(nn.Module):
             attention_mask (torch.Tensor): The attention mask of shape [B, Seq], where
                 1 indicates valid tokens and 0 indicates padding.
         """
-        # print("MASKED MEAN POOLING:检查")
-
         mask = attention_mask.unsqueeze(-1).to(hidden_states.dtype)
-
         summed = (hidden_states * mask).sum(dim=1)
-
         counts = mask.sum(dim=1).clamp(min=1e-6)
 
         return summed / counts
@@ -699,6 +694,7 @@ class NegDriveDiffusionPlanner(nn.Module):
 
         seq_lengths = attention_mask.sum(dim=1).tolist()
         print(f"Sequence lengths (non-padding tokens) per batch item: {seq_lengths}")
+
 
     def reward_pdm(
         self,
