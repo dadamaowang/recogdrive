@@ -747,62 +747,6 @@ class NegDriveDiffusionPlanner(nn.Module):
         }
         return rewards_tensor, detail_tensors
 
-    # def reward_binary_collision(
-    #     self,
-    #     pred_traj: torch.Tensor,        # [B, T, 3]
-    #     gt_traj: torch.Tensor,          # [B, T, 3]  from targets["trajectory"]
-    #     threshold: float = 2.0,         # meters — tune based on your data scale
-    #     soft_weight: float = 0.2,       # tiebreaker to prevent zero advantages
-    # ) -> torch.Tensor:
-    #     """
-    #     Mixed binary collision reward.
-
-    #     reward = binary_component + soft_weight * soft_component
-
-    #     binary_component:
-    #         1.0 if max deviation from GT < threshold  (safe)
-    #         0.0 if max deviation from GT >= threshold (collision)
-
-    #     soft_component:
-    #         exp(-ade / threshold)  — smooth tiebreaker in (0, 1]
-    #         ensures G rollouts always have variance even when
-    #         all are "safe", preventing zero GRPO advantages
-
-    #     Args:
-    #         pred_traj:   [B, T, 3] predicted trajectory (x, y, heading)
-    #         gt_traj:     [B, T, 3] ground truth trajectory
-    #         threshold:   collision boundary in meters
-    #         soft_weight: tiebreaker weight, keep small (0.1-0.2)
-
-    #     Returns:
-    #         rewards: [B] tensor, values in [0.0, 1.2]
-    #                 safe+close:   ~1.2
-    #                 safe+far:     ~1.0
-    #                 unsafe+close: ~0.2
-    #                 unsafe+far:   ~0.0
-    #     """
-    #     # Ensure same device and dtype
-    #     gt = gt_traj.to(device=pred_traj.device, dtype=pred_traj.dtype)
-
-    #     # ── XY distance at each timestep ─────────────────────────────────
-    #     diff          = pred_traj[..., :2] - gt[..., :2]    # [B, T, 2]
-    #     dist_per_step = diff.norm(dim=-1)                    # [B, T]
-
-    #     # ── Binary component ──────────────────────────────────────────────
-    #     max_deviation  = dist_per_step.max(dim=-1).values    # [B]
-    #     binary_reward  = (max_deviation < threshold).float() # [B] {0.0, 1.0}
-
-    #     # ── Soft tiebreaker component ─────────────────────────────────────
-    #     ade            = dist_per_step.mean(dim=-1)          # [B]
-    #     soft_reward    = torch.exp(-ade / threshold)         # [B] (0, 1]
-
-    #     # ── Combined reward ───────────────────────────────────────────────
-    #     reward = binary_reward + soft_weight * soft_reward   # [B]
-
-    #     return reward.detach()
-
-
-
 
     def sample_chain(
         self,
