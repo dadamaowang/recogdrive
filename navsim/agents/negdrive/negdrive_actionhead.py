@@ -355,9 +355,6 @@ class NegDriveDiffusionPlanner(nn.Module):
             action_features = action_features + self.position_embedding(pos_ids)
 
         if attention_mask is not None:
-            # print("检查 attention mask:")
-            # print(attention_mask)
-
             summed_embeds = self._masked_mean_pool(vl_features, attention_mask)
             vl_features_mean = summed_embeds.unsqueeze(1).repeat(1, self.config.action_horizon, 1)
         else:
