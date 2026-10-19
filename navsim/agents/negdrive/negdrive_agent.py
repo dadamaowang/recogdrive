@@ -203,17 +203,12 @@ class NegDriveAgent(AbstractAgent):
             print("Agent is in eval mode.")
             self.eval()
 
-
     def initialize(self) -> None:
-        """for hydra to initialize, no use. 【D】"""
         pass
 
-
     def name(self) -> str:
-        """【D】"""
         return self.__class__.__name__
     
-
     def set_total_training_steps(self, total_steps: int):
         self.total_training_steps = total_steps
         print(f"Total training steps {total_steps}")
@@ -274,7 +269,7 @@ class NegDriveAgent(AbstractAgent):
         total_fp32_trainable = 0
 
         print("\n" + "=" * 80)
-        print(f"{model_name}-模型精度检查")
+        print(f"{model_name}-Check Model Dtype")
         print("=" * 80)
 
         for name, param in model.named_parameters():
@@ -331,17 +326,14 @@ class NegDriveAgent(AbstractAgent):
 
 
     def get_sensor_config(self) -> SensorConfig:
-        """暂时不用管"""
         return SensorConfig.build_all_sensors(include=[0, 1, 2, 3])
 
 
     def get_target_builders(self) -> List[AbstractTargetBuilder]:
-        """暂时不用管"""
         return [NegDriveTrajectoryTargetBuilder(trajectory_sampling=self._trajectory_sampling)]
 
 
     def get_feature_builders(self) -> List[AbstractFeatureBuilder]:
-        """test 的时候可能先 cache, 看情况；"""
         return [NegDriveFeatureBuilder(   
             # cache_hidden_state=False,
         )]
@@ -380,7 +372,7 @@ class NegDriveAgent(AbstractAgent):
 
     def compute_trajectory_recogdrive(
             self, 
-            agent_input: AgentInput  # TODO AgentInput
+            agent_input: AgentInput 
             ) -> Trajectory:
         self.eval()
 
@@ -411,12 +403,6 @@ class NegDriveAgent(AbstractAgent):
 
     
     def compute_traj_cot(self, agent_input: AgentInput, cot_text:str) -> Trajectory:
-        """
-        NOTE 给 diffusion planner 的 last_hidden_states 不包括 prompt 
-        
-        TODO w/o image tokens 设置
-        
-        """
         self.eval()
 
         features: Dict[str, torch.Tensor] = {}
@@ -459,7 +445,7 @@ class NegDriveAgent(AbstractAgent):
 
     def unpack_features_for_vllm_service(self, agent_input: AgentInput):
         """
-        vLLM service online inference input prepare
+        vLLM online inference (for eval mode)
 
         Args:
             features: Dictionary containing raw feature tensors.
@@ -555,7 +541,7 @@ class NegDriveAgent(AbstractAgent):
             img_path = image_paths[0]
             with open(img_path, "rb") as f:
                 img = Image.open(f)
-                # img_resized = img.resize((960, 540))  # TODO inf时降低分辨率试试？
+                # img_resized = img.resize((960, 540)) 
                 img_resized = img
 
                 buffer = io.BytesIO()
@@ -569,7 +555,7 @@ class NegDriveAgent(AbstractAgent):
 
         except Exception:
             # fallback to omit image if encoding fails
-            print(f"图像加载失败！图像路径：{img_path}")
+            print(f"Image Load Failed ! Image Path：{img_path}")
             image_content = None
             return None
             
@@ -579,46 +565,14 @@ class NegDriveAgent(AbstractAgent):
 
         ]
 
-        # payload = {
-        #     "model": model_name,  
-        #     "messages": [
-        #         {
-        #             "role": "system",
-        #             "content": [
-        #                 {"type": "text", "text": "Hello, Who are you"}
-        #             ]
-        #         }
-        #         {
-        #             "role": "user",
-        #             "content": [
-        #                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
-        #                 {"type": "text", "text": "Hello, Who are you"}
-        #             ]
-        #         }
-        #     ],
-        #     "max_tokens": max_tokens,
-        #     "temperature": temperature,  
-        #     # "extra_body": {
-        #     #     "lora_request": {
-        #     #         "lora_name": lora_name,
-        #     #         "lora_path": lora_path
-        #     #     }
-        #     # }
-        # }
-
-
         return vllm_input_messages
-
 
 
     def unpack_features_cot_prompt(self, features: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, List[str], List[int]]:
         """
-        unpack_features, 自定义 CoT Prompt
-
-        Args:
-            features: Dictionary containing raw feature tensors.
-
+        
         """
+
         for key, tensor in features.items():
             if isinstance(tensor, torch.Tensor):
                 features[key] = tensor.cuda()
