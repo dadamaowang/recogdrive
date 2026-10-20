@@ -253,7 +253,9 @@ class NegDriveBackbone(nn.Module):
 
         queries = self._build_queries(pixel_values, questions, num_patches_list)
 
-        self.tokenizer.padding_side = 'left'    # NOTE 推理时 left, 其它时 right
+        if self.mode == "eval":
+            self.tokenizer.padding_side = 'left'   
+            
         model_inputs = self.tokenizer(queries, 
                                     return_tensors='pt', 
                                     padding='max_length', 
