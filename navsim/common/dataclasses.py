@@ -34,7 +34,6 @@ class Camera:
 
     image: Optional[npt.NDArray[np.float32]] = None
 
-    # 激光雷达的旋转/平移（外参）和相机自身的内参/畸变参数
     sensor2lidar_rotation: Optional[npt.NDArray[np.float32]] = None
     sensor2lidar_translation: Optional[npt.NDArray[np.float32]] = None
     intrinsics: Optional[npt.NDArray[np.float32]] = None
@@ -118,15 +117,10 @@ class Lidar:
     @staticmethod
     def _load_bytes(lidar_path: Path) -> BinaryIO:
         """Helper static method to load lidar point cloud stream."""
-        # 二进制读取模式 ("rb") 打开文件
+
         
         with open(lidar_path, "rb") as fp:
-            """
-            fp.read(): 一次性读取文件的全部二进制内容。
-            io.BytesIO(...): 将这些二进制内容封装成一个在内存中的二进制流对象。
-            这样做的好处是，下游的库（比如 nuPlan 的点云解析库）可以直接从这个内存流中读取数据，
-            而不需要再次操作磁盘文件，效率更高。
-            """
+
             return io.BytesIO(fp.read())
 
     @classmethod
@@ -139,15 +133,11 @@ class Lidar:
         :return: lidar point cloud dataclass
         """
 
-        # NOTE: this could be extended to load specific LiDARs in the merged pc
+
         
         if "lidar_pc" in sensor_names:
             global_lidar_path = sensor_blobs_path / lidar_path
-            """
-            LidarPointCloud.from_buffer(..., "pcd"): 调用 nuplan 库提供的 LidarPointCloud 类的 from_buffer 方法。
-                这个方法会解析内存中的二进制流（并告诉它格式是 .pcd），将其转换成一个 LidarPointCloud 对象。
-            .points: 从 LidarPointCloud 对象中，提取出最终的、我们需要的 NumPy 数组
-            """
+
             lidar_pc = LidarPointCloud.from_buffer(cls._load_bytes(global_lidar_path), "pcd").points
             return Lidar(lidar_pc)
         return Lidar()  # empty lidar
@@ -246,24 +236,7 @@ class AgentInput:
 class Annotations:
     """Dataclass of annotations (e.g. bounding boxes) per frame."""
 
-    # npt: numpy.typing -numpy的类型提示，表示这是一个numpy数组
-    """
-    boxes: npt.NDArray[np.float32]:
-    存储场景中所有物体的三维边界框（3D Bounding Boxes）。
-    这是一个 NumPy 数组，形状通常是 (N, 7)，其中 N 是物体的数量，7 代表每个物体的 (x, y, z, length, width, height, heading)。
-    names: List[str]:
-    存储每个边界框对应的类别名称。
-    这是一个字符串列表，长度为 N。例如 ['vehicle.car', 'pedestrian.adult', 'vehicle.bicycle']。
-    velocity_3d: npt.NDArray[np.float32]:
-    存储每个物体的三维速度。
-    这是一个 NumPy 数组，形状为 (N, 3)，代表每个物体的 (vx, vy, vz)。
-    instance_tokens: List[str]:
-    存储每个物体的实例ID（Instance ID）。
-    这是一个在整个数据集中都唯一的ID，用来标识一个独一无二的物体（比如，“在波士顿某条路上的这辆特定的丰田凯美瑞”）。
-    track_tokens: List[str]:
-    存储每个物体的追踪ID（Track ID）。
-    这是一个在当前场景（Scene）内唯一的ID，用来在连续的帧之间追踪同一个物体。例如，第1帧中 track_token 为 "abc" 的汽车，在第2帧中 track_token 同样为 "abc"。
-    """
+
     boxes: npt.NDArray[np.float32]
     names: List[str]
     velocity_3d: npt.NDArray[np.float32]
@@ -271,7 +244,7 @@ class Annotations:
     track_tokens: List[str]
 
     def __post_init__(self):
-        # vars(self) 获取当前对象的所有属性和值，返回一个字典
+
         annotation_lengths: Dict[str, int] = {
             attribute_name: len(attribute) for attribute_name, attribute in vars(self).items()
         }
