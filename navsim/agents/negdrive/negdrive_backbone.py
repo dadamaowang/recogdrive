@@ -1,5 +1,4 @@
 
-
 from typing import List, Optional, Tuple, Union, Literal
 import torch
 from torch import nn
@@ -30,15 +29,14 @@ You are a vehicle trajectory prediction model for autonomous driving. Your task 
 For evaluation, use the **PDM Score**, which combines these metrics: **PDM Score** = NC * DAC * (5*TTC + 5*EP + 2*C + 0*DDC) / 12.
 Your predictions will be evaluated through a non-reactive 4-second simulation with an LQR controller and background actors following their recorded trajectories. The better your predictions, the higher your score.
 """
-#【奖励设计TODO】
 
 
-@dataclass  # NOTE 记得 dataclass dec
+
+@dataclass
 class NegDriveBackboneOutput:  
     """
-    Output For Backbone RLVR training
+    Output For VLM RLVR 
     """
-
     logits: torch.Tensor    # [B, SeqLen, VocabSize] 
     hidden_states: tuple    #  tuple of [B, SeqLen, HiddenDim]
     input_ids: torch.Tensor     # [B, SeqLen]
@@ -50,7 +48,6 @@ class NegDriveBackboneOutput:
 class NegDriveGenOutput:
     """
     Everything needed downstream after VLM text generation.
-
     """
     full_ids: torch.Tensor    # [B, PromptLen + NewTokens]
     attention_mask: torch.Tensor    # [B, PromptLen + NewTokens]
@@ -71,9 +68,6 @@ class NegDriveBackbone(nn.Module):
                  lora_dropout: float= 0.05,
                  mode: Literal["train", "eval"] = "train",
                  ):
-        """
-        【D】
-        """
         super().__init__()
 
         self.model = None
@@ -106,9 +100,9 @@ class NegDriveBackbone(nn.Module):
             )
             # Load model-specific configuration
             self._configure_internvl()
-            self.num_image_token = 256  # 不可改
+            self.num_image_token = 256  
 
-            # 开启 GC (需要在 peft wrap 之前)
+            # gradient checkpoint should open before peft wrap
             if hasattr(self.model, "gradient_checkpointing_enable"):
                 self.model.gradient_checkpointing_enable()
                 print("Gradient checkpointing enabled for InternVL.")
@@ -174,7 +168,6 @@ class NegDriveBackbone(nn.Module):
                     ):
         """
         Apply LoRA to **Qwen2ForCausalLM** language model inside VLM backbone (attention and MLP layers).
-        TODO 不同的 self.model.language_model 
 
         LoRA freezes the original weights and adds small trainable
         low-rank matrices A and B beside each target linear layer:
@@ -183,8 +176,6 @@ class NegDriveBackbone(nn.Module):
         Qwen2 layer names (confirmed by inspection):
             Attention: q_proj, k_proj, v_proj, o_proj
             MLP:       gate_proj, up_proj, down_proj  
-
-
         """
         lora_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
@@ -242,12 +233,14 @@ class NegDriveBackbone(nn.Module):
 
         queries = self._build_queries(pixel_values, questions, num_patches_list)
 
-        self.tokenizer.padding_side = 'left'    # NOTE 推理时 left, 其它时 right
+        if self.mode == "eval":
+            self.tokenizer.padding_side = 'left'   
+            
         model_inputs = self.tokenizer(queries, 
                                     return_tensors='pt', 
                                     padding='max_length', 
                                     max_length=2800
-                                    )  # TODO change max length
+                                    ) 
 
         device = torch.device('cuda')
         input_ids = model_inputs['input_ids'].to(device)
@@ -260,7 +253,7 @@ class NegDriveBackbone(nn.Module):
         image_flags = torch.tensor([1] * num_patches, dtype=torch.long)
 
         # return self.model(
-        #         # pixel_values=pixel_values.bfloat16(),  # 原始 code 是这样的 
+        #         # pixel_values=pixel_values.bfloat16(),  
         #         pixel_values=pixel_values,
         #         input_ids=input_ids,
         #         attention_mask=attention_mask,
