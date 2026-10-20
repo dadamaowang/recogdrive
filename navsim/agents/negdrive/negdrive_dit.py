@@ -2,7 +2,7 @@
 # Modified from LightningDiT(https://github.com/hustvl/LightningDiT)
 # Copyright (c) Xiaomi Corporation. All rights reserved.
 # ------------------------------------------------------------------------
-from __future__ import annotations  # python 3.9 版本较旧问题
+from __future__ import annotations  
 
 import torch
 from torch import nn

@@ -273,24 +273,6 @@ class NegDriveBackbone(nn.Module):
                 return_dict=True,
         )
 
-        """
-        NOTE output class definition
-        @dataclass
-        class CausalLMOutputWithPast(ModelOutput):
-            loss: Optional[torch.FloatTensor] = None
-
-            logits: torch.FloatTensor = None
-                (batch_size, sequence_length, config.vocab_size)
-                Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax)
-
-            past_key_values: Optional[List[torch.FloatTensor]] = None(?)
-
-            hidden_states: Optional[Tuple[torch.FloatTensor]] = None (?)
-                returned when ``output_hidden_states=True``
-                Hidden-states of the model at the output of each layer plus the initial embedding outputs.
-
-            attentions: Optional[Tuple[torch.FloatTensor]] = None (?)
-        """
         return NegDriveBackboneOutput(
             logits=model_outputs.logits,
             hidden_states=model_outputs.hidden_states,
@@ -368,7 +350,6 @@ class NegDriveBackbone(nn.Module):
         # ---------------------------------------
         #   Build Full Sequence Attention Mask
         # ---------------------------------------
-        #  (prompt + generated)   TODO log_prob 计算 等
         full_ids = torch.cat([input_ids, generated_ids], dim=1)   # [B, prompt_len + new_tokens]
 
         full_attention_mask = torch.cat([
@@ -382,7 +363,7 @@ class NegDriveBackbone(nn.Module):
         text_actions = self.tokenizer.batch_decode(
             generated_ids, skip_special_tokens=True
         )
-        print(f"生成文字检查: {text_actions}")
+
 
         self.tokenizer.padding_side = 'right'
 
@@ -404,10 +385,6 @@ class NegDriveBackbone(nn.Module):
         Used after generate_text_actions() to get hidden states conditioned
         on the generated text response.
 
-        This is the key method that makes each G rollout produce a DIFFERENT 
-        hidden state - because each rollout has different generated tokens in input_ids.
-
-        TODO check
         """
         device = torch.device('cuda')
         input_ids = input_ids.to(device)
@@ -429,24 +406,6 @@ class NegDriveBackbone(nn.Module):
                 return_dict=True,
         )
 
-        """
-        NOTE output class definition
-        @dataclass
-        class CausalLMOutputWithPast(ModelOutput):
-            loss: Optional[torch.FloatTensor] = None
-
-            logits: torch.FloatTensor = None
-                (batch_size, sequence_length, config.vocab_size)
-                Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax)
-
-            past_key_values: Optional[List[torch.FloatTensor]] = None(?)
-
-            hidden_states: Optional[Tuple[torch.FloatTensor]] = None (?)
-                returned when ``output_hidden_states=True``
-                Hidden-states of the model at the output of each layer plus the initial embedding outputs.
-
-            attentions: Optional[Tuple[torch.FloatTensor]] = None (?)
-        """
         return NegDriveBackboneOutput(
             logits=model_outputs.logits,
             hidden_states=model_outputs.hidden_states,
@@ -454,12 +413,14 @@ class NegDriveBackbone(nn.Module):
             attention_mask=attention_mask
         )
     
-
     def forward_with_ids_cot_and_image(self,
                                        pixel_values: torch.Tensor,
                                        questions: List[str],
                                        num_patches_list: List[int], 
                                        ) -> NegDriveBackboneOutput:
+        """
+        forward with CoT and image token's hidden states 
+        """
 
         queries = self._build_queries(pixel_values, questions, num_patches_list)
         
@@ -508,10 +469,6 @@ class NegDriveBackbone(nn.Module):
     def forward_cot_only(self,
                          cot_text,  # [SeqLen] (batch_size=1)
                          ) -> NegDriveBackboneOutput:
-        """
-        Use as 'self.eval' mode, only compute cot text token's last hidden states, no need to use vision encoder
-        """
-
         model_inputs = self.tokenizer(
             [cot_text],
             return_tensors="pt",

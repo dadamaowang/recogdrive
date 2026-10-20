@@ -1,14 +1,4 @@
-# -*- encoding: utf-8 -*-
-'''
-@File    :   negdrive_features.py
-@Time    :   2026/01/30 16:16:12
-@Author  :   Nuoqian Xiao
-@Version :   0.0.1
-@Contact :   feimaoxiaotianshi@outlook.com
-@License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   DOING
-@Desc    :   数据预处理，特征构建和目标构建
-'''
+
 
 from typing import Dict, Optional
 import torch
@@ -37,25 +27,11 @@ class NegDriveFeatureBuilder(AbstractFeatureBuilder):
                  ):
         """
         Initializes the negdrive feature builder.
-        
-        NOTICE: 
-            cache_hidden_state (bool) 这里默认为 False, 因为需要微调 VLM 
-
-        Args:
-            cache_hidden_state (bool): If True, operates in online mode, initializes the backbone,
-                                       and computes the hidden state. If False, operates in offline
-                                       mode, does not initialize the backbone, and returns
-                                       pre-computable tensors, including a tensorized representation
-                                       of the image file path.
-            model_type (str, optional): The type of model to load ('internvl' or 'qwen'). Required if cache_hidden_state is True.
-            checkpoint_path (str, optional): Path to the model checkpoint. Required if cache_hidden_state is True.
-            device (str): The device to load the model onto.
-
-        TODO : 测试的时候考虑 cache ? 
+ 
         """
         super().__init__()
 
-    def get_unique_name(self) -> str:   # TODO
+    def get_unique_name(self) -> str:  
         return "negdrive_feature"
 
     def compute_features(self, agent_input: AgentInput) -> Dict[str, torch.Tensor]:
@@ -82,43 +58,7 @@ class NegDriveFeatureBuilder(AbstractFeatureBuilder):
             "status_feature": status_feature.cpu(),
             "image_path_tensor": path_tensor.cpu(),
         }
-        # else:
-        #     raise NotImplementedError  # 这个应该不需要了
-            # if self.backbone is None:
-            #     raise RuntimeError("FeatureBuilder is in online mode, but the backbone was not initialized.")
 
-            # pixel_values = load_image(str(cameras[-1].cam_f0.image)).unsqueeze(0)
-
-            # pixel_values_squeezed = pixel_values.squeeze(1)
-            # pixel_values_cat = torch.cat(list(pixel_values_squeezed), dim=0)
-            # num_patches_list = [pv.shape[0] for pv in pixel_values_squeezed]
-            # # all_loaded_images = load_image(str(cameras[-1].cam_f0.image))
-
-            # # # b. 根据新参数进行切片，只保留少量图片（例如2张）
-            # # pixel_values_cat = all_loaded_images[:2]
-
-            # # # c. 相应地更新 num_patches_list
-            # # num_patches_list = [pixel_values_cat.shape[0]]
-
-
-            # navigation_commands = ['turn left', 'go straight', 'turn right', 'unknown']
-
-            # command_str = next((navigation_commands[i] for i, v in enumerate(high_command_one_hot) if v == 1), 'unknown')
-            # history_str = " ".join([f'   - t-{3-i}: ({format_number(history_trajectory[i, 0].item())}, {format_number(history_trajectory[i, 1].item())}, {format_number(history_trajectory[i, 2].item())})' for i in range(4)])
-            
-            # prompt = f"<image>\nAs an autonomous driving system, predict the vehicle's trajectory based on:\n1. Visual perception from front camera view\n2. Historical motion context (last 4 timesteps):{history_str}\n3. Active navigation command: [{command_str.upper()}]"
-            # output_requirements = "\nOutput requirements:\n- Predict 8 future trajectory points\n- Each point format: (x:float, y:float, heading:float)\n- Use [PT, ...] to encapsulate the trajectory\n- Maintain numerical precision to 2 decimal places"
-            # questions = [f"{prompt}{output_requirements}"]
-
-            # outputs = self.backbone(pixel_values_cat.cuda(), questions, num_patches_list=num_patches_list)
-            # last_hidden_state = outputs.hidden_states[-1]
-
-            # return {
-            #     "history_trajectory": history_trajectory.cpu(),
-            #     "high_command_one_hot": high_command_one_hot.cpu(),
-            #     "last_hidden_state": last_hidden_state.squeeze(0).float().cpu(),
-            #     "status_feature": status_feature.cpu(),
-            # }
 
 
 class NegDriveTrajectoryTargetBuilder(AbstractTargetBuilder):
