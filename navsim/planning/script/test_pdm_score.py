@@ -1,14 +1,3 @@
-# -*- encoding: utf-8 -*-
-'''
-@File    :   test_pdm_score.py
-@Time    :   2026/05/20 15:13:12
-@Author  :   Nuoqian Xiao
-@Version :   0.0.1
-@Contact :   feimaoxiaotianshi@outlook.com
-@License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   Development
-@Desc    :   测试各个方式的 pdm_score 
-'''
 
 from typing import Any, Dict, List, Union, Tuple
 from pathlib import Path

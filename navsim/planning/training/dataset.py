@@ -1,14 +1,4 @@
-# -*- encoding: utf-8 -*-
-'''
-@File    :   dataset.py
-@Time    :   2026/02/02 22:06:24
-@Author  :   Nuoqian Xiao
-@Version :   0.0.1
-@Contact :   feimaoxiaotianshi@outlook.com
-@License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   None
-@Desc    :   None
-'''
+
 
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path

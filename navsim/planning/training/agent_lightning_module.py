@@ -1,14 +1,4 @@
-# -*- encoding: utf-8 -*-
-'''
-@File    :   agent_lightning_module.py
-@Time    :   2026/01/04 10:46:58
-@Author  :   Nuoqian Xiao
-@Version :   0.0.1
-@Contact :   feimaoxiaotianshi@outlook.com
-@License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   正在优化
-@Desc    :   
-'''
+
 
 import pytorch_lightning as pl
 from pytorch_lightning import Callback

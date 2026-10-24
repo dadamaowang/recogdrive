@@ -1,14 +1,4 @@
-# -*- encoding: utf-8 -*-
-'''
-@File    :   run_training_negdrive.py
-@Time    :   2026/01/03 19:47:39
-@Author  :   Nuoqian Xiao
-@Version :   0.0.1
-@Contact :   feimaoxiaotianshi@outlook.com
-@License :   (C)Copyright 2024-2025, Nuoqian Xiao
-@Status  :   runnable, developing, draft finished 
-@Desc    :   【正在优化】
-'''
+
 
 from typing import Tuple, List, Dict, Any, Optional
 from pathlib import Path
@@ -35,7 +25,7 @@ from navsim.planning.training.agent_lightning_module import AgentLightningVLMRL,
 
 
 
-import sys
+
 
 logger = logging.getLogger(__name__)
 
@@ -345,7 +335,7 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         data_path=train_data_path,
         scene_filter=train_scene_filter,
         sensor_config=agent.get_sensor_config(),
-        load_image_path=True       # NOTE 如果训 VLM, 这里需要设置成 True; 
+        load_image_path=True      
     )
 
     if cfg.get("train_scene_subset", "full") == "high_risk" and int(os.getenv("RANK", 0)) == 0:
@@ -388,8 +378,8 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         scene_loader=train_scene_loader,
         feature_builders=agent.get_feature_builders(),
         target_builders=agent.get_target_builders(),
-        cache_path=cfg.cache_path,    # VLM fine-tine must None(null)
-        force_cache_computation=False,  # VLM fine-tine must False
+        cache_path=cfg.cache_path,   
+        force_cache_computation=False, 
     )   
 
     val_data = Dataset(
@@ -455,10 +445,10 @@ def main(cfg: DictConfig) -> None:
     )
 
     experiment_config = build_experiment_config(cfg)
-    swanlab_mode = os.environ.get("SWANLAB_MODE", "online")
+    swanlab_mode = os.environ.get("SWANLAB_MODE", "offline")
     swanlab_logger = SwanLabLogger(
-        project="NegDriveComplete",
-        workspace="Xnq",
+        project="xxx",
+        workspace="xxxx",
         experiment_name=cfg.experiment_name,
         config=experiment_config,
         log_dir=cfg.output_dir,
@@ -474,7 +464,7 @@ def main(cfg: DictConfig) -> None:
             VRAMMonitor(), 
             LearningRateMonitor(logging_interval="step"),
             OptimizerHealthMonitor(),
-            IterLoRAModelCheckpoint(    # TODO 改成监控 rewards 的
+            IterLoRAModelCheckpoint(    
                 dirpath=os.path.join(cfg.output_dir, "checkpoints"),
             ),
         ]

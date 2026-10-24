@@ -8,8 +8,10 @@
 @License :   (C)Copyright 2024-2025, Nuoqian Xiao
 @Status  :   
 @Desc    :   
-    多线程异步并发请求 vLLM inference -> batched denoise -> 并发仿真
-    启动脚本 recogdrive/scripts/evaluation/inference_cot_negdrive.sh
+Multithreaded asynchronous concurrent requests for vLLM inference -> batched denoise -> concurrent simulation
+Start script recogdrive/scripts/evaluation/inference_cot_negdrive.sh
+
+Used for negdrive testing
 '''
 
 import sys
