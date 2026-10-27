@@ -1,7 +1,5 @@
-# NOTICE:
-# 1. 提交选择 2 GPU
-# VLM_PATH 和 Diff_PATH 尺寸参数一致
-# prompt 修改： /root/recogdrive/navsim/agents/negdrive/negdrive_agent.py/unpack_features_for_vllm_service
+
+# prompt ： /root/recogdrive/navsim/agents/negdrive/negdrive_agent.py/unpack_features_for_vllm_service
 
 
 nvidia-smi
@@ -35,7 +33,7 @@ VLLM_CMD=$(which vllm)
 echo "[$(date)] which vLLM : $VLLM_CMD"
 
 
-VLM_PATH="/root/navsim_workspace/models/ReCogDrive-VLM-2B/"    # 记得检查 agent.diff_path 大小兼容
+VLM_PATH="/root/navsim_workspace/models/ReCogDrive-VLM-2B/"
 
 
 nohup $VLLM_CMD serve $VLM_PATH \
@@ -50,26 +48,6 @@ nohup $VLLM_CMD serve $VLM_PATH \
     --port $PORT \
     --host 0.0.0.0 \
     > vllm_server_${EXP_NAME}.log 2>&1 &
-
-
-# LORA_PATH="/root/navsim_workspace/exps/lora_tmp/"
-# MAX_LORA_RANK=16
-
-# nohup $VLLM_CMD serve $VLM_PATH \
-#     --trust-remote-code \
-#     --limit-mm-per-prompt '{"image": 12}' \
-#     --max-model-len 4096 \
-#     --dtype bfloat16 \
-#     --tokenizer $VLM_PATH \
-#     --tokenizer-mode auto \
-#     --max-num-seqs 128 \
-#     --enable-lora \
-#     --max-lora-rank $MAX_LORA_RANK \
-#     --lora-modules neg_lora=$LORA_PATH \
-#     --gpu-memory-utilization 0.90 \
-#     --port $PORT \
-#     --host 0.0.0.0 \
-#     > vllm_server_${EXP_NAME}.log 2>&1 &
 
 
 
@@ -114,7 +92,7 @@ export NUPLAN_MAPS_ROOT="$OPENSCENE_DATA_ROOT/maps"
 export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
 
 
-export TORCHDYNAMO_DISABLE=1    # dit compute 问题
+export TORCHDYNAMO_DISABLE=1    
 
 TRAIN_TEST_SPLIT=navtest
 python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/cot_inference.py \

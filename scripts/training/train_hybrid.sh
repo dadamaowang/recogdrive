@@ -1,31 +1,8 @@
 
-# NOTEICE
-# 1. metric_cache 路径检查
-# 2. default_training 里超参都检查一下
-
 
 source ~/.bashrc
 conda activate nd
 which python
-
-
-# open clash (optional, not required for SwanLab)
-# ~/clash -d ~/.config/clash/ > clash_job.log 2>&1 &
-# CLASH_PID=$!
-#
-# echo "Waiting for Clash to start..."
-# for i in {1..15}; do
-#     if ss -tuln | grep -q ":7890"; then
-#         echo "Clash is ready!"
-#         break
-#     fi
-#     sleep 1
-# done
-#
-# ps aux | grep clash
-#
-# export http_proxy=http://127.0.0.1:7890
-# export https_proxy=http://127.0.0.1:7890
 
 
 nvidia-smi
@@ -73,10 +50,7 @@ export GPUS_PER_NODE=${GPUS_PER_NODE:-8}
 export MASTER_PORT=${MASTER_PORT}
 export PORT=${PORT}
 
-# SwanLab experiment tracking (国内云端，无需代理)
-# 首次使用：在 https://swanlab.cn 获取 API Key，或执行 swanlab login
-export SWANLAB_API_KEY="oKEbC9aKSzvCLOISQ3DLL"
-# 离线模式（不上传云端，本地 swanboard 查看）：export SWANLAB_MODE=offline
+export SWANLAB_API_KEY=""
 export SWANLAB_MODE=${SWANLAB_MODE:-online}
 
 torchrun \
