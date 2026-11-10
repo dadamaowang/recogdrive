@@ -46,3 +46,22 @@ grpo_cfg:
   clip_advantage_lower_quantile: 0.0
   clip_advantage_upper_quantile: 1.0
   skip_zero_std_groups: true
+
+# Structured CoT prompt: the VLM writes one tagged section per stage (needed by TEMPO).
+# Off = original free-form prompt, unchanged.
+structured_cot: false
+segment_tags: ['<perception>', '<prediction>', '<decision>', '<check>', '<trajectory>']
+
+# TEMPO: segment-level prefix-tree TD correction on the GRPO advantage (rl_algorithm=grpo).
+# Off = plain GRPO, unchanged. Spec: TEMPO.md; code: navsim/agents/negdrive/utils/tempo.py; tests: tests/test_tempo.py.
+tempo_cfg:
+  enabled: false
+  td_coef: 1.0                  # 0 reproduces the GRPO advantage
+  delta_mode: broadcast         # broadcast | first_token
+  node_match: exact_normalized  # exact_normalized | key_fn | embedding
+  sim_threshold: 0.9            # embedding only (cosine, average linkage)
+  key_fn: null                  # key_fn: "module.path:function" (default hook: tempo.segment_key_fn)
+  embedder: null                # embedding: "module.path:function" (default: bag of words)
+  strict_order: true
+  warn_compliance_below: 0.5
+  warn_nodes_per_response_above: 0.99

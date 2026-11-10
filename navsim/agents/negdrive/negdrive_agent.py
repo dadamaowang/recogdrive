@@ -42,6 +42,7 @@ from .negdrive_features import NegDriveFeatureBuilder, NegDriveTrajectoryTargetB
 
 from .negdrive_backbone import NegDriveBackbone
 from .negdrive_actionhead import NegDriveDiffusionPlannerConfig, NegDriveDiffusionPlanner
+from .utils.tempo import DEFAULT_SEGMENT_TAGS, build_structured_cot_instructions
 
 
 
@@ -84,6 +85,9 @@ class NegDriveAgent(AbstractAgent):
         # ========== RL ==========
         rl_algorithm: str = "nsr",   # nsr | grpo
         grpo_cfg: Optional[Dict[str, Any]] = None,
+        tempo_cfg: Optional[Dict[str, Any]] = None,   # TEMPO advantage (requires rl_algorithm=grpo)
+        structured_cot: bool = False,   # ask for tagged CoT sections (needed by TEMPO)
+        segment_tags: Optional[List[str]] = None,   # ordered section tags for structured_cot
         per_sample_rollout: int = 4,
         bag_g: int = 4,   # Best-of-G reward
         max_padding_len: int = 2800,   # max token length after padding (for diffusion input) 
@@ -248,6 +252,9 @@ class NegDriveAgent(AbstractAgent):
         #         f"Unknown rl_algorithm: {rl_algorithm!r}. Expected 'nsr' or 'grpo' or 'hybrid'."
         #     )
         self.grpo_cfg = dict(grpo_cfg) if grpo_cfg is not None else {}
+        self.tempo_cfg = dict(tempo_cfg) if tempo_cfg is not None else {}
+        self.structured_cot = bool(structured_cot)
+        self.segment_tags = list(segment_tags) if segment_tags else list(DEFAULT_SEGMENT_TAGS)
 
         self.per_sample_rollout = per_sample_rollout
         self.bag_g = bag_g
@@ -759,6 +766,15 @@ class NegDriveAgent(AbstractAgent):
                 "- Maintain 2 decimal places of precision.\n"
                 "- Example: [PT, (1.20, 0.50, 0.05), ...]"
             )
+
+            if self.structured_cot:
+                # same task and inputs; the output is one tagged section per reasoning stage
+                output_requirements = (
+                    "\n### Output Format:\n"
+                    f"{build_structured_cot_instructions(self.segment_tags)}"
+                    "- Each trajectory point: (x:float, y:float, heading:float), 2 decimal places.\n"
+                    "- Example: [PT, (1.20, 0.50, 0.05), ...]"
+                )
 
             questions.append(f"{prompt}{output_requirements}")
         

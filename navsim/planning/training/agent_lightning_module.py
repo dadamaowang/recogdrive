@@ -26,10 +26,17 @@ from navsim.agents.abstract_agent import AbstractAgent
 from navsim.agents.negdrive.utils.internvl_preprocess import load_image
 from navsim.agents.negdrive.utils.utils import format_number
 from navsim.agents.negdrive.negdrive_backbone import NegDriveGenOutput
+from navsim.agents.negdrive.utils.tempo import (
+    TempoConfig,
+    compute_tempo_advantage_seg,
+    split_batch,
+    stack_rollout_responses,
+)
 
 from omegaconf import DictConfig, OmegaConf
 
 import os
+from collections import defaultdict
 from pathlib import Path
 
 from navsim.common.dataloader import MetricCacheLoader
@@ -490,6 +497,23 @@ class AgentLightningVLMRL(pl.LightningModule):
         self.grpo_clip_lower_q = float(grpo_cfg.get("clip_advantage_lower_quantile", 0.0))
         self.grpo_clip_upper_q = float(grpo_cfg.get("clip_advantage_upper_quantile", 1.0))
 
+        # TEMPO: segment-level prefix-tree TD correction on top of the GRPO advantage
+        tempo_cfg = getattr(agent, "tempo_cfg", None) or {}
+        if isinstance(tempo_cfg, DictConfig):
+            tempo_cfg = OmegaConf.to_container(tempo_cfg, resolve=True)
+        self.tempo_cfg = TempoConfig.from_dict(tempo_cfg)
+        self.segment_tags = list(getattr(agent, "segment_tags", None) or [])
+        self.tempo_cluster_fn = None
+        if self.tempo_cfg.enabled:
+            if self.rl_algorithm != "grpo":
+                raise ValueError(
+                    f"tempo_cfg.enabled requires rl_algorithm=grpo (got {self.rl_algorithm!r}); "
+                    "TEMPO replaces the GRPO advantage."
+                )
+            if not getattr(agent, "structured_cot", False) or not self.segment_tags:
+                raise ValueError("tempo_cfg.enabled requires agent.structured_cot=true and non-empty agent.segment_tags")
+            self.tempo_cluster_fn = self.tempo_cfg.build_cluster_fn()
+
         self.cfg = cfg
         self.val_metric_cache_loader = None
         if cfg is not None:
@@ -773,8 +797,13 @@ class AgentLightningVLMRL(pl.LightningModule):
         b: int,
         g: int,
         bundle: RolloutBundle,
+        token_weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Forward a single (b, g) sample and return mean token log-prob of the response."""
+        """
+        Forward a single (b, g) sample and return mean token log-prob of the response.
+        With token_weights [ResponseLen] (response positions, as in stack_rollout_responses),
+        returns the token mean of weight_t * log_prob_t instead.
+        """
         gen_output_g = bundle.all_gen_output[g]
         gen_output_single = NegDriveGenOutput(
             full_ids=gen_output_g.full_ids[b:b + 1],
@@ -795,6 +824,11 @@ class AgentLightningVLMRL(pl.LightningModule):
             )
 
         num_tokens_b = eos_mask_b.sum().clamp(min=1)
+        if token_weights is not None:
+            weights = torch.zeros_like(token_lp_b)
+            n = min(weights.shape[-1], token_weights.shape[-1])
+            weights[..., :n] = token_weights[:n].to(weights.device, weights.dtype)
+            return (weights * token_lp_b * eos_mask_b).sum() / num_tokens_b
         return (token_lp_b * eos_mask_b).sum() / num_tokens_b
 
     def _run_distributed_manual_updates(
@@ -809,7 +843,8 @@ class AgentLightningVLMRL(pl.LightningModule):
         Run per-sample manual backward passes with DDP synchronization.
 
         Each item in update_samples is either None (dummy backward) or
-        (b, g, advantage_scalar).
+        (b, g, advantage), where advantage is a float (sequence-level, GRPO/NSR) or a
+        [ResponseLen] tensor of token-level advantages (TEMPO).
         Returns True if the optimizer step should be skipped.
         """
         num_updates_local = sum(1 for sample in update_samples if sample is not None)
@@ -845,10 +880,19 @@ class AgentLightningVLMRL(pl.LightningModule):
                 continue
 
             b, g, advantage = sample
-            mean_log_prob_b = self._compute_mean_response_log_prob(b, g, bundle)
-            loss_b = -(advantage * mean_log_prob_b) / global_denominator
+            if torch.is_tensor(advantage):
+                weighted_log_prob_b = self._compute_mean_response_log_prob(
+                    b, g, bundle, token_weights=advantage
+                )
+                loss_b = -weighted_log_prob_b / global_denominator
+                mean_log_prob_b = weighted_log_prob_b
+            else:
+                mean_log_prob_b = self._compute_mean_response_log_prob(b, g, bundle)
+                loss_b = -(advantage * mean_log_prob_b) / global_denominator
             self.manual_backward(loss_b)
             total_pg_loss += loss_b.item()
+
+
             del mean_log_prob_b, loss_b
             torch.cuda.empty_cache()
 
@@ -964,16 +1008,21 @@ class AgentLightningVLMRL(pl.LightningModule):
         )
         self._log_safety_rollout_metrics(nc_tensor, dac_tensor, logging_prefix)
 
-        update_samples: List[Optional[Tuple[int, int, float]]] = []
+        update_samples: List[Optional[Tuple[int, int, Any]]] = []
         batch_size, group_size = advantages.shape
-        for b in range(batch_size):
-            if not valid_group_mask[b]:
-                continue
-            for g in range(group_size):
-                adv = advantages[b, g].item()
-                if abs(adv) <= self.grpo_advantage_eps:
+        if self.tempo_cfg.enabled:
+            update_samples = self._tempo_update_samples(
+                bundle, rewards, advantages, valid_group_mask, logging_prefix
+            )
+        else:
+            for b in range(batch_size):
+                if not valid_group_mask[b]:
                     continue
-                update_samples.append((b, g, adv))
+                for g in range(group_size):
+                    adv = advantages[b, g].item()
+                    if abs(adv) <= self.grpo_advantage_eps:
+                        continue
+                    update_samples.append((b, g, adv))
 
         num_updates = len(update_samples)
         print(f"GRPO 更新样本数目：{num_updates}")
@@ -995,6 +1044,91 @@ class AgentLightningVLMRL(pl.LightningModule):
         )
         self._cleanup_rollout_bundle(bundle)
         return skipped
+
+
+    def _tempo_update_samples(
+        self,
+        bundle: RolloutBundle,
+        rewards: torch.Tensor,
+        grpo_advantages: torch.Tensor,
+        valid_group_mask: torch.Tensor,
+        logging_prefix: str,
+    ) -> List[Tuple[int, int, torch.Tensor]]:
+        """
+        TEMPO advantages for the full rollout batch (before any per-sample update).
+
+        Rows are (scene b, rollout g) -> b * G + g; a group is one scene's G rollouts,
+        all generated on this rank (asserted). Uses the GRPO step's std definition
+        (biased), eps and std normalization, so td_coef=0 equals the GRPO advantage.
+        Returns (b, g, token_advantages [ResponseLen]) for rows with a non-zero advantage.
+        """
+        cfg = self.tempo_cfg
+        batch_size, G = rewards.shape
+        with torch.no_grad():
+            responses, resp_mask, _ = stack_rollout_responses(bundle.all_gen_output)
+            group_ids = [b for b in range(batch_size) for _ in range(G)]
+            counts = defaultdict(int)
+            for gid in group_ids:
+                counts[gid] += 1
+            assert all(c == G for c in counts.values()) and responses.shape[0] == batch_size * G, \
+                "TEMPO needs all G rollouts of a prompt in the same call on the same rank"
+
+            seg_items, seg_spans, split_stats = split_batch(
+                responses, resp_mask, self.agent.vlm.tokenizer, self.segment_tags,
+                strict_order=cfg.strict_order,
+            )
+            token_adv, tempo_stats = compute_tempo_advantage_seg(
+                scores=rewards.reshape(-1),
+                response_mask=resp_mask,
+                group_ids=group_ids,
+                seg_items=seg_items,
+                seg_spans=seg_spans,
+                cluster_fn=self.tempo_cluster_fn,
+                td_coef=cfg.td_coef,
+                eps=self.grpo_advantage_eps,
+                norm_by_std=True,
+                unbiased_std=False,
+                delta_mode=cfg.delta_mode,
+            )
+
+            if self.grpo_clip_lower_q > 0.0 or self.grpo_clip_upper_q < 1.0:
+                # same quantile bounds as the GRPO step: the clipped GRPO tensor's min / max
+                lo, hi = grpo_advantages.min().item(), grpo_advantages.max().item()
+                token_adv = token_adv.clamp(min=lo, max=hi) * resp_mask
+
+        stats = {**split_stats, **tempo_stats}
+        for name, value in stats.items():
+            self.log(f"{logging_prefix}/{name}", float(value), on_step=True, on_epoch=False,
+                     prog_bar=False, sync_dist=True)
+        self._warn_tempo_degenerate(stats)
+
+        samples: List[Tuple[int, int, torch.Tensor]] = []
+        for b in range(batch_size):
+            if self.grpo_skip_zero_std_groups and not valid_group_mask[b]:
+                continue
+            for g in range(G):
+                row = token_adv[b * G + g]
+                if row.abs().max().item() <= self.grpo_advantage_eps:
+                    continue
+                samples.append((b, g, row))
+        return samples
+
+    def _warn_tempo_degenerate(self, stats: Dict[str, float]) -> None:
+        """Flag the cases where TEMPO silently behaves like GRPO."""
+        if self.global_rank != 0:
+            return
+        cfg = self.tempo_cfg
+        compliance = stats.get("vlm/format_compliance_rate", 0.0)
+        if compliance < cfg.warn_compliance_below:
+            print(f"[TEMPO WARNING] format compliance {compliance:.2f} < {cfg.warn_compliance_below}: "
+                  "non-compliant responses get only the GRPO term.")
+        npr = stats.get("tempo/nodes_per_response", 1.0)
+        nz = stats.get("tempo/frac_tokens_delta_nonzero", 0.0)
+        if npr >= cfg.warn_nodes_per_response_above or nz == 0.0:
+            hint = (" With node_match=exact_normalized free-form sections almost never match; "
+                    "use key_fn or embedding.") if cfg.node_match == "exact_normalized" else ""
+            print(f"[TEMPO WARNING] nodes_per_response={npr:.3f}, frac_tokens_delta_nonzero={nz:.3f}: "
+                  f"nothing merges or branches, TEMPO == GRPO this step.{hint}")
 
 
     def _training_step_hybrid(
